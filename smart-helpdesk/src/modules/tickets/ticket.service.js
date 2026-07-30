@@ -170,5 +170,14 @@ export async function draftReply(id) {
     return { draft, aiAvailable: draft !== null, basedOn: similar.slice(0, 3).map((s) => ({ refNo: s.refNo, subject: s.subject, score: s.score })) };
 }
 
+/**
+ * Rewrites a rough issue description with AI (for the "Rewrite with AI" intake button).
+ * @returns {{ rewritten: string|null, aiAvailable: boolean }}
+ */
+export async function rewriteDescription({ title, text }) {
+    const rewritten = await ai.rewriteDescription({ title, text });
+    return { rewritten, aiAvailable: rewritten !== null };
+}
+
 export function listCategories() { return repo.listCategories(); }
 export function listAgents() { return repo.listAgents(); }

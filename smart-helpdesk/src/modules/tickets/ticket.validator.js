@@ -37,6 +37,11 @@ export const replySchema = Joi.object({
     isInternal: Joi.boolean().default(false)
 });
 
+export const rewriteSchema = Joi.object({
+    title: Joi.string().max(250).allow('', null),
+    text: Joi.string().min(3).max(10000).required()
+});
+
 export const emailInboundSchema = Joi.object({
     from: email.required(),
     fromName: Joi.string().max(150).allow('', null),

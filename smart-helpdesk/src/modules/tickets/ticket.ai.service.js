@@ -114,3 +114,31 @@ Reply:`;
         return null;
     }
 }
+
+/**
+ * Rewrites a rough, user-written issue description into a clear, professional ticket description.
+ * Best-effort: returns null when AI is off or on any error (the caller keeps the original text).
+ *
+ * @param {object} args
+ * @param {string} [args.title]
+ * @param {string} args.text - The user's rough description.
+ * @returns {Promise<string|null>}
+ */
+export async function rewriteDescription({ title = '', text }) {
+    if (!AI_ENABLED || !text?.trim()) return null;
+    const system = 'You rewrite rough IT/support requests into clear, professional, concise ticket descriptions.';
+    const user = `Rewrite the description below so it reads as a clear, specific, professional support ticket.
+Rules: keep it factual — do NOT invent details (systems, times, error codes, numbers) that are not implied.
+2-4 sentences. Preserve the technical meaning. Return ONLY the rewritten description, with no preamble or quotes.
+
+Title: ${title || '(none)'}
+Description: ${text}`;
+
+    try {
+        const out = await chat([{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 0.3 });
+        return out ? out.replace(/^["']|["']$/g, '').trim() : null;
+    } catch (err) {
+        console.warn('[ai] rewriteDescription failed:', err.response?.data?.error?.message || err.message); // eslint-disable-line no-console
+        return null;
+    }
+}

@@ -13,6 +13,10 @@ export function emailInbound(req, res) {
     const result = service.ingestEmail(req.body);
     sendCreated(res, result, result.created ? `Ticket created: ${result.ticket.refNo}` : `Appended to ${result.ticket.refNo}`);
 }
+export async function rewrite(req, res) {
+    const result = await service.rewriteDescription(req.body);
+    sendSuccess(res, result, result.aiAvailable ? 'Rewritten' : 'AI unavailable (set GROQ_API_KEY)');
+}
 
 // ---- Agent -----------------------------------------------------------------
 export function list(req, res) {

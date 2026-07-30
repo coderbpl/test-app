@@ -4,13 +4,14 @@ import { authenticate } from '../../middlewares/auth.middleware.js';
 import { validateBody, validateParams, validateQuery } from '../../middlewares/validate.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import {
-    createTicketSchema, idParamSchema, listQuerySchema, assignSchema, statusSchema, replySchema
+    createTicketSchema, idParamSchema, listQuerySchema, assignSchema, statusSchema, replySchema, rewriteSchema
 } from './ticket.validator.js';
 
 const router = Router();
 
 // ---- Public (customer-facing) ---------------------------------------------
 router.get('/categories', asyncHandler(controller.listCategories));
+router.post('/rewrite', validateBody(rewriteSchema), asyncHandler(controller.rewrite));
 router.post('/', validateBody(createTicketSchema), asyncHandler(controller.create));
 
 // ---- Agent (auth) ----------------------------------------------------------
