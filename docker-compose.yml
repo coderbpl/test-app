@@ -1,0 +1,35 @@
+services:
+  api:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DB_FILE: /app/data/grievance.db
+      # Point the app at the Ollama service on the compose network.
+      ENABLE_AI: "true"
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.1
+      JWT_SECRET: change-me-in-production
+      ADMIN_EMAIL: admin@grievance.local
+      ADMIN_PASSWORD: admin123
+    volumes:
+      - grievance_data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+    # After first boot, pull a model once:
+    #   docker compose exec ollama ollama pull llama3.1
+
+volumes:
+  grievance_data:
+  ollama_models:
