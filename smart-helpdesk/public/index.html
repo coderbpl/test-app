@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Support — Submit a Ticket</title>
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+    <header class="topbar">
+        <div><h1>🎫 Support Center</h1><div class="sub">Raise a ticket — we'll route it to the right specialist</div></div>
+        <div class="links"><a href="/">Submit</a><a href="/agent.html">Agent login</a></div>
+    </header>
+
+    <div class="container narrow">
+        <div class="card">
+            <h2>Raise a support ticket</h2>
+            <p class="hint">Or email us — inbound emails become tickets automatically.</p>
+            <div id="notice"></div>
+            <form id="form">
+                <div class="row">
+                    <div><label>Your name</label><input id="name" /></div>
+                    <div><label>Email</label><input id="email" type="email" /></div>
+                </div>
+                <label>Subject *</label>
+                <input id="subject" required placeholder="e.g. Refund not received for cancelled order" />
+                <label>Describe your issue *</label>
+                <textarea id="body" required placeholder="Tell us what's happening…"></textarea>
+                <label>Category (optional — AI will detect)</label>
+                <select id="category"><option value="">Auto-detect</option></select>
+                <div class="btn-row"><button type="submit" id="submit">Submit ticket</button></div>
+            </form>
+        </div>
+        <div class="card hidden" id="success">
+            <h2>✅ Ticket created</h2>
+            <p>Your reference number:</p>
+            <p class="ref" id="refNo" style="font-size:20px"></p>
+            <p id="routeInfo" class="muted"></p>
+            <div class="btn-row"><button class="secondary" onclick="location.reload()">Submit another</button></div>
+        </div>
+    </div>
+
+    <script>
+        const api = (p, o) => fetch('/api' + p, o).then(async r => { const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.error || 'Failed'); return b; });
+        api('/tickets/categories').then(r => { const s = document.getElementById('category'); r.data.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name; s.appendChild(o); }); }).catch(() => {});
+        document.getElementById('form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const btn = document.getElementById('submit'), n = document.getElementById('notice');
+            const payload = {
+                subject: subject.value.trim(), body: body.value.trim(),
+                requesterName: name.value.trim() || undefined, requesterEmail: email.value.trim() || undefined,
+                categoryId: category.value ? Number(category.value) : undefined
+            };
+            btn.disabled = true; btn.textContent = 'Submitting…'; n.innerHTML = '';
+            try {
+                const res = await api('/tickets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                document.getElementById('form').classList.add('hidden');
+                document.getElementById('refNo').textContent = res.data.ticket.refNo;
+                const rec = res.data.recommendation?.recommendedAgent;
+                document.getElementById('routeInfo').textContent = rec ? `Routed to ${rec.agentName} — ${rec.reason}.` : 'Queued for assignment.';
+                document.getElementById('success').classList.remove('hidden');
+            } catch (err) { n.innerHTML = `<div class="notice err">${err.message}</div>`; }
+            finally { btn.disabled = false; btn.textContent = 'Submit ticket'; }
+        });
+    </script>
+</body>
+</html>
