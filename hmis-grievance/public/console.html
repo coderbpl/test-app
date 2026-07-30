@@ -52,7 +52,8 @@
     <div class="modal-bg" id="modal"><div class="modal"><div class="mhead"><span class="ref" id="mRef"></span><button class="x" id="mClose">&times;</button></div><div class="mbody" id="mBody"></div></div></div>
 
     <script>
-        let token = localStorage.getItem('hg_token'), me = JSON.parse(localStorage.getItem('hg_me') || 'null'), staff = [];
+        let token = localStorage.getItem('hg_token'), me = JSON.parse(localStorage.getItem('hg_me') || 'null'), staff = [], hospitals = [];
+        const hospOptions = (sel) => `<option value="">All hospitals</option>${hospitals.map(h => `<option value="${h.id}" ${String(sel) === String(h.id) ? 'selected' : ''}>${h.name}</option>`).join('')}`;
         const api = (p, o = {}) => fetch('/api' + p, { ...o, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(o.headers || {}) } })
             .then(async r => { const b = await r.json().catch(() => ({})); if (r.status === 401) { logout(); throw new Error('Session expired'); } if (!r.ok) throw new Error(b.error || 'Failed'); return b; });
         const $ = id => document.getElementById(id);
@@ -73,6 +74,7 @@
             $('loginView').classList.add('hidden'); $('shell').classList.remove('hidden');
             $('who').textContent = me.name + ' · ' + me.role;
             try { staff = (await api('/auth/staff')).data; } catch {}
+            try { hospitals = (await api('/hospitals')).data; } catch {}
             show('dashboard');
         }
         const TITLES = { dashboard: 'Dashboard', grievances: 'Grievances', feedback: 'Feedback', tickets: 'Tickets' };
@@ -119,20 +121,22 @@
                 <input class="grow" id="gq" placeholder="Search…"/>
                 <select id="gStatus"><option value="">All statuses</option>${['NEW','ACKNOWLEDGED','IN_PROGRESS','RESOLVED','CLOSED','REOPENED'].map(s => `<option>${s}</option>`).join('')}</select>
                 <select id="gPrio"><option value="">All priorities</option>${['CRITICAL','HIGH','MEDIUM','LOW'].map(s => `<option>${s}</option>`).join('')}</select>
+                <select id="gHospF">${hospOptions()}</select>
                 <button class="ghost" id="gRefresh">Refresh</button></div><div id="gList"><p class="muted">Loading…</p></div>`;
             const run = async () => {
                 const p = new URLSearchParams({ limit: '100' });
                 if ($('gq').value.trim()) p.set('search', $('gq').value.trim());
                 if ($('gStatus').value) p.set('status', $('gStatus').value);
                 if ($('gPrio').value) p.set('priority', $('gPrio').value);
+                if ($('gHospF').value) p.set('hospitalId', $('gHospF').value);
                 const r = await api('/grievances?' + p);
                 $('gList').innerHTML = r.data.length ? `<table><thead><tr><th>Ref</th><th>Subject</th><th>Priority</th><th>Status</th><th>Owner tier</th></tr></thead><tbody>${
-                    r.data.map(g => `<tr data-id="${g.id}"><td><strong>${esc(g.refNo)}</strong><div class="muted" style="font-size:12px">${esc(g.categoryName || '—')}</div></td>
+                    r.data.map(g => `<tr data-id="${g.id}"><td><strong>${esc(g.refNo)}</strong><div class="muted" style="font-size:12px">${esc(g.categoryName || '—')}${g.hospitalName ? ' · ' + esc(g.hospitalName) : ''}</div></td>
                     <td>${esc((g.subject || g.description).slice(0, 60))}</td><td>${pill(g.priority, g.priority)}</td><td>${pill('status', g.status)}${g.slaBreached ? ' ' + pill('breach', 'SLA') : ''}</td><td class="muted">${esc(g.currentOwnerTier)}</td></tr>`).join('')
                 }</tbody></table>` : '<p class="muted">No grievances.</p>';
                 $('gList').querySelectorAll('tbody tr').forEach(tr => tr.addEventListener('click', () => openGrievance(tr.dataset.id)));
             };
-            $('gRefresh').onclick = run; ['gStatus', 'gPrio'].forEach(id => $(id).onchange = run); $('gq').onkeydown = e => { if (e.key === 'Enter') run(); };
+            $('gRefresh').onclick = run; ['gStatus', 'gPrio', 'gHospF'].forEach(id => $(id).onchange = run); $('gq').onkeydown = e => { if (e.key === 'Enter') run(); };
             run();
         }
         async function openGrievance(id) {
@@ -173,7 +177,7 @@
         // ---------- FEEDBACK ----------
         async function loadFeedback() {
             const el = $('p-feedback'); el.innerHTML = '<p class="muted">Loading…</p>';
-            const [{ data: a }, { data: list }] = await Promise.all([api('/feedback/analytics'), api('/feedback?limit=100')]);
+            const { data: a } = await api('/feedback/analytics');
             el.innerHTML = `
                 <div class="stat-grid">
                     <div class="stat"><div class="num">${a.totals.count || 0}</div><div class="lbl">Responses</div></div>
@@ -189,9 +193,20 @@
                 <div class="card"><h2 style="font-size:15px">By department <span class="muted" style="font-weight:400">(hospital service)</span></h2>
                     <table><thead><tr><th>Department</th><th>Responses</th><th>Avg overall</th></tr></thead><tbody>${a.byDepartment.map(d => `<tr><td>${esc(d.department)}</td><td>${d.count}</td><td>${pill(d.avgOverall >= 4 ? 'MEDIUM' : d.avgOverall >= 3 ? 'HIGH' : 'CRITICAL', (d.avgOverall ?? '—') + ' ★')}</td></tr>`).join('')}</tbody></table></div>
                 <div class="card"><h2 style="font-size:15px">Recent feedback</h2>
-                    <table><thead><tr><th>Ref</th><th>Type</th><th>Overall</th><th>Comment</th><th>Follow-up</th></tr></thead><tbody>${
-                    list.map(f => `<tr><td>${esc(f.refNo)}</td><td>${f.feedbackType === 'APP' ? '📱 App' : '🏥 ' + esc(f.department || 'Service')}</td><td>${pill(f.ratingOverall >= 4 ? 'MEDIUM' : f.ratingOverall >= 3 ? 'HIGH' : 'CRITICAL', f.ratingOverall + '/5')}</td><td>${esc((f.comment || '').slice(0, 60))}</td><td class="muted">${f.linkedGrievanceId ? '⚑ grievance #' + f.linkedGrievanceId : '—'}</td></tr>`).join('')
-                    }</tbody></table></div>`;
+                    <div class="toolbar"><select id="fbHosp">${hospOptions()}</select>
+                        <select id="fbType"><option value="">All types</option><option value="SERVICE">🏥 Hospital service</option><option value="APP">📱 HMIS app</option></select></div>
+                    <div id="fbList"><p class="muted">Loading…</p></div></div>`;
+            const loadFbList = async () => {
+                const p = new URLSearchParams({ limit: '100' });
+                if ($('fbHosp').value) p.set('hospitalId', $('fbHosp').value);
+                if ($('fbType').value) p.set('feedbackType', $('fbType').value);
+                const { data: list } = await api('/feedback?' + p);
+                $('fbList').innerHTML = list.length ? `<table><thead><tr><th>Ref</th><th>Type</th><th>Overall</th><th>Comment</th><th>Follow-up</th></tr></thead><tbody>${
+                    list.map(f => `<tr><td>${esc(f.refNo)}</td><td>${f.feedbackType === 'APP' ? '📱 App' : '🏥 ' + esc(f.department || 'Service')}</td><td>${pill(f.ratingOverall >= 4 ? 'MEDIUM' : f.ratingOverall >= 3 ? 'HIGH' : 'CRITICAL', f.ratingOverall + '/5')}</td><td>${esc((f.comment || '').slice(0, 60))}</td><td class="muted">${f.linkedGrievanceId ? '⚑ grievance #' + f.linkedGrievanceId : f.linkedTicketId ? '🛠 ticket #' + f.linkedTicketId : '—'}</td></tr>`).join('')
+                    }</tbody></table>` : '<p class="muted">No feedback for this filter.</p>';
+            };
+            ['fbHosp', 'fbType'].forEach(id => $(id).onchange = loadFbList);
+            loadFbList();
         }
 
         // ---------- TICKETS ----------

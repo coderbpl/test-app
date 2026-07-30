@@ -37,6 +37,7 @@ const listQuery = Joi.object({
     status: Joi.string().valid(...STATUS).optional(),
     priority: Joi.string().valid(...PRIORITY).optional(),
     categoryId: Joi.number().integer().positive().optional(),
+    hospitalId: Joi.number().integer().positive().optional(),
     isUrgent: Joi.boolean().optional()
 });
 const statusSchema = Joi.object({ status: Joi.string().valid(...STATUS).required(), comment: Joi.string().max(2000).allow('', null), resolution: Joi.string().max(5000).allow('', null) });
@@ -49,7 +50,7 @@ const ROW = `
     g.id, g.ref_no AS refNo, g.category_id AS categoryId, c.name AS categoryName, c.name_hi AS categoryNameHi,
     g.subject, g.description, g.language, g.is_anonymous AS isAnonymous,
     g.complainant_name AS complainantName, g.complainant_mobile AS complainantMobile, g.complainant_email AS complainantEmail,
-    g.facility, g.department, g.priority, g.status, g.is_urgent AS isUrgent,
+    g.hospital_id AS hospitalId, h.name AS hospitalName, g.facility, g.department, g.priority, g.status, g.is_urgent AS isUrgent,
     g.sla_due_at AS slaDueAt, g.current_owner_tier AS currentOwnerTier,
     g.assigned_staff_id AS assignedStaffId, s.name AS assignedStaffName, g.resolution,
     g.resolved_at AS resolvedAt, g.closed_at AS closedAt, g.created_at AS createdAt, g.updated_at AS updatedAt`;
@@ -60,7 +61,7 @@ function timeline(gid, e) {
         .run({ gid, type: e.type, from: e.from ?? null, to: e.to ?? null, comment: e.comment ?? null, actorId: e.actorId ?? null, actorName: e.actorName ?? null, internal: e.internal ? 1 : 0 });
 }
 function getRow(id) {
-    return db.prepare(`SELECT ${ROW} FROM grievances g LEFT JOIN grievance_categories c ON c.id = g.category_id LEFT JOIN staff s ON s.id = g.assigned_staff_id WHERE g.id = ?`).get(id) || null;
+    return db.prepare(`SELECT ${ROW} FROM grievances g LEFT JOIN grievance_categories c ON c.id = g.category_id LEFT JOIN staff s ON s.id = g.assigned_staff_id LEFT JOIN hospitals h ON h.id = g.hospital_id WHERE g.id = ?`).get(id) || null;
 }
 
 /**
@@ -154,11 +155,12 @@ router.get('/', authenticate, vQuery(listQuery), asyncHandler((req, res) => {
     add('g.status = @status', 'status', req.query.status);
     add('g.priority = @priority', 'priority', req.query.priority);
     add('g.category_id = @categoryId', 'categoryId', req.query.categoryId);
+    add('g.hospital_id = @hospitalId', 'hospitalId', req.query.hospitalId);
     if (req.query.isUrgent !== undefined) { where.push('g.is_urgent = @u'); p.u = req.query.isUrgent ? 1 : 0; }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const rows = db.prepare(`SELECT ${ROW},
             CASE WHEN g.status NOT IN ('RESOLVED','CLOSED') AND g.sla_due_at < @now THEN 1 ELSE 0 END AS slaBreached
-        FROM grievances g LEFT JOIN grievance_categories c ON c.id = g.category_id LEFT JOIN staff s ON s.id = g.assigned_staff_id
+        FROM grievances g LEFT JOIN grievance_categories c ON c.id = g.category_id LEFT JOIN staff s ON s.id = g.assigned_staff_id LEFT JOIN hospitals h ON h.id = g.hospital_id
         ${clause}
         ORDER BY g.is_urgent DESC, CASE g.priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, g.created_at DESC
         LIMIT @limit OFFSET @offset`).all({ ...p, now: nowIso(), limit, offset });

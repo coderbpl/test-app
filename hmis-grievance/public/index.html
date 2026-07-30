@@ -68,38 +68,33 @@
                 <div class="sub">Your feedback helps us improve. Low ratings are followed up automatically.</div>
                 <div id="fNotice"></div>
 
-                <label>What is this feedback about? <span class="hin opt">· किस बारे में?</span></label>
-                <div class="btn-row" style="margin-top:6px">
-                    <button type="button" class="btn ghost" id="ftService">🏥 Hospital service <span class="hin">· सेवा</span></button>
-                    <button type="button" class="btn ghost" id="ftApp">📱 HMIS app <span class="hin">· ऐप</span></button>
+                <div class="row">
+                    <div><label>Feedback about <span class="hin opt">· विषय</span></label>
+                        <select id="fType"><option value="SERVICE">🏥 Hospital service · सेवा</option><option value="APP">📱 HMIS app · ऐप</option></select></div>
+                    <div><label>Hospital <span class="hin opt">· अस्पताल</span></label>
+                        <select id="fHosp"><option value="">Select / चुनें</option></select></div>
                 </div>
-
-                <label style="margin-top:12px">Hospital <span class="hin opt">· अस्पताल</span></label>
-                <select id="fHosp"><option value="">Select hospital / अस्पताल चुनें</option></select>
-
                 <div id="fDeptWrap"><label>Department <span class="opt">(optional)</span></label>
-                <input id="fDept" placeholder="OPD / Pharmacy / Emergency…" /></div>
+                    <input id="fDept" placeholder="OPD / Pharmacy / Emergency…" /></div>
 
-                <div style="margin-top:14px">
+                <div style="margin-top:12px">
                     <div class="rate-row"><span class="lbl">Overall <span class="hin opt">· कुल</span> *</span><div class="stars" data-key="overall"></div></div>
                     <div id="svcRates">
-                        <div class="rate-row"><span class="lbl">Staff behaviour <span class="hin opt">· स्टाफ</span></span><div class="stars" data-key="staff"></div></div>
+                        <div class="rate-row"><span class="lbl">Staff <span class="hin opt">· स्टाफ</span></span><div class="stars" data-key="staff"></div></div>
                         <div class="rate-row"><span class="lbl">Cleanliness <span class="hin opt">· साफ-सफाई</span></span><div class="stars" data-key="cleanliness"></div></div>
-                        <div class="rate-row"><span class="lbl">Waiting time <span class="hin opt">· प्रतीक्षा</span></span><div class="stars" data-key="waiting"></div></div>
+                        <div class="rate-row"><span class="lbl">Waiting <span class="hin opt">· प्रतीक्षा</span></span><div class="stars" data-key="waiting"></div></div>
                     </div>
                     <div id="appRates" class="hidden">
-                        <div class="rate-row"><span class="lbl">Ease of use <span class="hin opt">· उपयोग में आसानी</span></span><div class="stars" data-key="ease"></div></div>
-                        <div class="rate-row"><span class="lbl">Speed &amp; reliability <span class="hin opt">· गति</span></span><div class="stars" data-key="speed"></div></div>
+                        <div class="rate-row"><span class="lbl">Ease of use <span class="hin opt">· आसानी</span></span><div class="stars" data-key="ease"></div></div>
+                        <div class="rate-row"><span class="lbl">Speed <span class="hin opt">· गति</span></span><div class="stars" data-key="speed"></div></div>
                     </div>
                 </div>
-                <label style="margin-top:14px">Would you recommend this hospital? <span class="hin opt">· क्या आप सुझाएंगे?</span></label>
-                <div class="btn-row" style="margin-top:6px">
-                    <button type="button" class="ghost" id="recYes">👍 Yes / हाँ</button>
-                    <button type="button" class="ghost" id="recNo">👎 No / नहीं</button>
+                <div id="fRecWrap" class="rate-row" style="margin-top:6px">
+                    <span class="lbl">Recommend this hospital? <span class="hin opt">· सुझाएंगे?</span></span>
+                    <div style="display:flex;gap:8px"><button type="button" class="btn ghost" id="recYes" style="padding:7px 12px">👍</button><button type="button" class="btn ghost" id="recNo" style="padding:7px 12px">👎</button></div>
                 </div>
-                <label style="margin-top:14px">Comments <span class="opt">(optional)</span></label>
-                <textarea id="fComment" placeholder="Tell us more…"></textarea>
-                <div class="btn-row"><button type="button" id="fSubmit" class="amber">Submit feedback <span class="hin">· भेजें</span></button></div>
+                <textarea id="fComment" placeholder="Comments (optional) · टिप्पणी" style="margin-top:12px;min-height:72px"></textarea>
+                <div class="btn-row"><button type="button" id="fSubmit" class="amber" style="width:100%;justify-content:center">Submit feedback <span class="hin">· भेजें</span></button></div>
             </div>
             <div class="card hidden" id="fOk"><h2>🙏 Thank you <span class="hin" style="font-weight:600">· धन्यवाद</span></h2><p id="fOkMsg"></p><div class="btn-row"><button class="ghost" onclick="location.reload()">Done</button></div></div>
         </section>
@@ -162,18 +157,16 @@
             } catch (err) { $('gNotice').innerHTML = `<div class="notice err">${err.message}</div>`; b.disabled = false; b.textContent = 'Submit grievance'; }
         });
 
-        // Feedback type toggle (Hospital service vs HMIS app)
+        // Feedback type (single dropdown) — show only the relevant fields, keep the form short.
         let feedbackType = 'SERVICE';
         function setType(t) {
             feedbackType = t;
-            $('ftService').classList.toggle('amber', t === 'SERVICE');
-            $('ftApp').classList.toggle('amber', t === 'APP');
             $('svcRates').classList.toggle('hidden', t !== 'SERVICE');
             $('appRates').classList.toggle('hidden', t !== 'APP');
             $('fDeptWrap').classList.toggle('hidden', t !== 'SERVICE');
+            $('fRecWrap').classList.toggle('hidden', t !== 'SERVICE');
         }
-        $('ftService').addEventListener('click', () => setType('SERVICE'));
-        $('ftApp').addEventListener('click', () => setType('APP'));
+        $('fType').addEventListener('change', e => setType(e.target.value));
         setType('SERVICE');
 
         // Star ratings

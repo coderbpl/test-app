@@ -82,19 +82,21 @@ function assign(id, staffId, staffName, { auto = false, actorName } = {}) {
     event(id, auto ? 'AUTO_ASSIGNED' : 'ASSIGNED', `Assigned to ${staffName}`, actorName || (auto ? 'Auto-router' : staffName));
 }
 
-// ---- Router (all staff-auth: internal tickets) ----
-const router = Router();
-router.use(authenticate);
-
-router.post('/', vBody(createSchema), asyncHandler((req, res) => {
-    const d = req.body;
+/**
+ * Creates a ticket and auto-routes it to the best-matching staff member. Shared by the API route
+ * and by other modules (e.g. a poor HMIS-app feedback auto-raises an IT ticket).
+ *
+ * @param {{subject:string, body:string, category?:string, priority?:string, facility?:string,
+ *          raisedByStaffId?:number|null, createdByName?:string|null}} dto
+ * @returns {{ ticket: object, recommendation: object }}
+ */
+export function createTicketAutoRouted(dto) {
     const info = db.prepare(`INSERT INTO tickets (subject, body, category, facility, priority, status, raised_by_staff_id)
                              VALUES (@subject, @body, @category, @facility, @priority, 'OPEN', @by)`)
-        .run({ subject: d.subject, body: d.body, category: d.category ?? null, facility: d.facility ?? null, priority: d.priority || 'MEDIUM', by: req.staff.id });
+        .run({ subject: dto.subject, body: dto.body, category: dto.category ?? null, facility: dto.facility ?? null, priority: dto.priority || 'MEDIUM', by: dto.raisedByStaffId ?? null });
     const id = Number(info.lastInsertRowid);
     db.prepare('UPDATE tickets SET ref_no = ? WHERE id = ?').run(buildRef('TKT', id), id);
-    event(id, 'CREATED', `Raised by ${req.staff.name}`, req.staff.name);
-
+    event(id, 'CREATED', dto.createdByName ? `Raised by ${dto.createdByName}` : 'Created', dto.createdByName ?? null);
     const ticket = getRow(id);
     const recommendation = buildRecommendation(ticket);
     if (recommendation.recommended) {
@@ -102,7 +104,17 @@ router.post('/', vBody(createSchema), asyncHandler((req, res) => {
         assign(id, r.staffId, r.staffName, { auto: true });
         event(id, 'RECOMMENDATION', `Suggested ${r.staffName}: ${r.reason} (${recommendation.source})`, 'Recommendation engine');
     }
-    sendCreated(res, { ticket: getRow(id), recommendation }, `Ticket created: ${ticket.refNo}`);
+    return { ticket: getRow(id), recommendation };
+}
+
+// ---- Router (all staff-auth: internal tickets) ----
+const router = Router();
+router.use(authenticate);
+
+router.post('/', vBody(createSchema), asyncHandler((req, res) => {
+    const d = req.body;
+    const result = createTicketAutoRouted({ ...d, raisedByStaffId: req.staff.id, createdByName: req.staff.name });
+    sendCreated(res, result, `Ticket created: ${result.ticket.refNo}`);
 }));
 
 router.get('/staff-directory', asyncHandler((req, res) => {

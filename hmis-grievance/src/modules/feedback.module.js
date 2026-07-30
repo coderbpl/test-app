@@ -4,6 +4,7 @@ import { db } from '../config/db.js';
 import { sendSuccess, sendCreated, sendPaginated, asyncHandler, sanitizePagination, buildRef, NotFoundError } from '../utils/index.js';
 import { authenticate, vBody, vParams, vQuery } from '../middlewares/index.js';
 import { createGrievance } from './grievances.module.js';
+import { createTicketAutoRouted } from './tickets.module.js';
 
 const r1to5 = Joi.number().integer().min(1).max(5);
 const createSchema = Joi.object({
@@ -29,6 +30,8 @@ const listQuery = Joi.object({
     page: Joi.number().integer().positive().default(1),
     limit: Joi.number().integer().positive().max(100).default(20),
     department: Joi.string().max(100).optional(),
+    hospitalId: Joi.number().integer().positive().optional(),
+    feedbackType: Joi.string().valid('SERVICE', 'APP').optional(),
     minRating: r1to5.optional(),
     maxRating: r1to5.optional()
 });
@@ -37,7 +40,7 @@ const ROW = `id, ref_no AS refNo, feedback_type AS feedbackType, hospital_id AS 
     visit_ref AS visitRef, rating_overall AS ratingOverall, rating_staff AS ratingStaff,
     rating_cleanliness AS ratingCleanliness, rating_waiting AS ratingWaiting, rating_ease AS ratingEase,
     rating_speed AS ratingSpeed, would_recommend AS wouldRecommend, comment, is_anonymous AS isAnonymous,
-    patient_name AS patientName, linked_grievance_id AS linkedGrievanceId, created_at AS createdAt`;
+    patient_name AS patientName, linked_grievance_id AS linkedGrievanceId, linked_ticket_id AS linkedTicketId, created_at AS createdAt`;
 
 const router = Router();
 
@@ -58,23 +61,33 @@ router.post('/', vBody(createSchema), asyncHandler((req, res) => {
     const id = Number(info.lastInsertRowid);
     db.prepare('UPDATE feedback SET ref_no = ? WHERE id = ?').run(buildRef('FBK', id), id);
 
-    // Closed-loop: a poor SERVICE rating (<=2) becomes a grievance so someone follows up.
-    // (APP feedback is about the software, not the hospital service, so it isn't converted.)
-    let linkedGrievance = null;
-    if (d.ratingOverall <= 2 && (d.feedbackType || 'SERVICE') === 'SERVICE') {
-        linkedGrievance = createGrievance({
-            subject: `Low patient feedback (${d.ratingOverall}/5)${d.department ? ' — ' + d.department : ''}`,
-            description: d.comment?.trim() ? d.comment.trim() : `Patient rated the experience ${d.ratingOverall}/5. No comment provided.`,
-            facility: d.facility ?? null, department: d.department ?? null, isAnonymous: d.isAnonymous !== false,
-            complainantName: d.patientName ?? null, complainantMobile: d.patientMobile ?? null
-        }, { actorName: 'Feedback system' });
-        db.prepare('UPDATE feedback SET linked_grievance_id = ? WHERE id = ?').run(linkedGrievance.id, id);
+    // Closed loop for poor ratings (<=2): a hospital-SERVICE rating becomes a grievance; an
+    // HMIS-APP rating becomes a routed IT ticket. Both get followed up by the right team.
+    let linkedGrievance = null, linkedTicket = null;
+    if (d.ratingOverall <= 2) {
+        if ((d.feedbackType || 'SERVICE') === 'SERVICE') {
+            linkedGrievance = createGrievance({
+                subject: `Low patient feedback (${d.ratingOverall}/5)${d.department ? ' — ' + d.department : ''}`,
+                description: d.comment?.trim() ? d.comment.trim() : `Patient rated the experience ${d.ratingOverall}/5. No comment provided.`,
+                hospitalId: d.hospitalId ?? null, facility: d.facility ?? null, department: d.department ?? null, isAnonymous: d.isAnonymous !== false,
+                complainantName: d.patientName ?? null, complainantMobile: d.patientMobile ?? null
+            }, { actorName: 'Feedback system' });
+            db.prepare('UPDATE feedback SET linked_grievance_id = ? WHERE id = ?').run(linkedGrievance.id, id);
+        } else {
+            linkedTicket = createTicketAutoRouted({
+                subject: `Low HMIS app rating (${d.ratingOverall}/5)`,
+                body: d.comment?.trim() ? d.comment.trim() : `A user rated the HMIS application ${d.ratingOverall}/5 with no comment.`,
+                category: 'IT', priority: 'MEDIUM', createdByName: 'App feedback'
+            }).ticket;
+            db.prepare('UPDATE feedback SET linked_ticket_id = ? WHERE id = ?').run(linkedTicket.id, id);
+        }
     }
 
     const feedback = db.prepare(`SELECT ${ROW} FROM feedback WHERE id = ?`).get(id);
-    sendCreated(res, { feedback, linkedGrievance }, linkedGrievance
-        ? `Thank you. We've logged a follow-up (${linkedGrievance.refNo}) for your concern.`
-        : 'Thank you for your feedback.');
+    const msg = linkedGrievance ? `Thank you. We've logged a follow-up (${linkedGrievance.refNo}) for your concern.`
+        : linkedTicket ? `Thank you. We've raised an IT ticket (${linkedTicket.refNo}) to improve the app.`
+            : 'Thank you for your feedback.';
+    sendCreated(res, { feedback, linkedGrievance, linkedTicket }, msg);
 }));
 
 // Staff — analytics
@@ -99,6 +112,8 @@ router.get('/', authenticate, vQuery(listQuery), asyncHandler((req, res) => {
     const { page, limit, offset } = sanitizePagination(req.query);
     const where = []; const p = {};
     if (req.query.department) { where.push('department = @d'); p.d = req.query.department; }
+    if (req.query.hospitalId) { where.push('hospital_id = @h'); p.h = req.query.hospitalId; }
+    if (req.query.feedbackType) { where.push('feedback_type = @ft'); p.ft = req.query.feedbackType; }
     if (req.query.minRating) { where.push('rating_overall >= @min'); p.min = req.query.minRating; }
     if (req.query.maxRating) { where.push('rating_overall <= @max'); p.max = req.query.maxRating; }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';

@@ -107,8 +107,10 @@ CREATE TABLE IF NOT EXISTS feedback (
     is_anonymous        INTEGER NOT NULL DEFAULT 1,
     patient_name        TEXT,
     patient_mobile      TEXT,
-    -- Set when a low rating is auto-converted into a grievance for follow-up.
+    -- Set when a low rating is auto-converted into a follow-up: a grievance (hospital service)
+    -- or an IT ticket (HMIS app).
     linked_grievance_id INTEGER REFERENCES grievances(id),
+    linked_ticket_id    INTEGER REFERENCES tickets(id),
     created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS ix_fb_dept ON feedback (department, created_at);
