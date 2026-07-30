@@ -7,6 +7,8 @@ import { createGrievance } from './grievances.module.js';
 
 const r1to5 = Joi.number().integer().min(1).max(5);
 const createSchema = Joi.object({
+    feedbackType: Joi.string().valid('SERVICE', 'APP').default('SERVICE'),
+    hospitalId: Joi.number().integer().positive().optional(),
     facility: Joi.string().max(150).allow('', null),
     department: Joi.string().max(100).allow('', null),
     visitRef: Joi.string().max(60).allow('', null),
@@ -14,6 +16,8 @@ const createSchema = Joi.object({
     ratingStaff: r1to5.optional(),
     ratingCleanliness: r1to5.optional(),
     ratingWaiting: r1to5.optional(),
+    ratingEase: r1to5.optional(),
+    ratingSpeed: r1to5.optional(),
     wouldRecommend: Joi.boolean().optional(),
     comment: Joi.string().max(2000).allow('', null),
     isAnonymous: Joi.boolean().default(true),
@@ -29,10 +33,11 @@ const listQuery = Joi.object({
     maxRating: r1to5.optional()
 });
 
-const ROW = `id, ref_no AS refNo, facility, department, visit_ref AS visitRef, rating_overall AS ratingOverall,
-    rating_staff AS ratingStaff, rating_cleanliness AS ratingCleanliness, rating_waiting AS ratingWaiting,
-    would_recommend AS wouldRecommend, comment, is_anonymous AS isAnonymous, patient_name AS patientName,
-    linked_grievance_id AS linkedGrievanceId, created_at AS createdAt`;
+const ROW = `id, ref_no AS refNo, feedback_type AS feedbackType, hospital_id AS hospitalId, facility, department,
+    visit_ref AS visitRef, rating_overall AS ratingOverall, rating_staff AS ratingStaff,
+    rating_cleanliness AS ratingCleanliness, rating_waiting AS ratingWaiting, rating_ease AS ratingEase,
+    rating_speed AS ratingSpeed, would_recommend AS wouldRecommend, comment, is_anonymous AS isAnonymous,
+    patient_name AS patientName, linked_grievance_id AS linkedGrievanceId, created_at AS createdAt`;
 
 const router = Router();
 
@@ -40,21 +45,23 @@ const router = Router();
 router.post('/', vBody(createSchema), asyncHandler((req, res) => {
     const d = req.body;
     const info = db.prepare(
-        `INSERT INTO feedback (facility, department, visit_ref, rating_overall, rating_staff, rating_cleanliness, rating_waiting,
-                               would_recommend, comment, is_anonymous, patient_name, patient_mobile)
-         VALUES (@facility, @department, @visitRef, @overall, @staff, @clean, @wait, @rec, @comment, @anon, @pname, @pmobile)`
+        `INSERT INTO feedback (feedback_type, hospital_id, facility, department, visit_ref, rating_overall, rating_staff, rating_cleanliness,
+                               rating_waiting, rating_ease, rating_speed, would_recommend, comment, is_anonymous, patient_name, patient_mobile)
+         VALUES (@type, @hospitalId, @facility, @department, @visitRef, @overall, @staff, @clean, @wait, @ease, @speed, @rec, @comment, @anon, @pname, @pmobile)`
     ).run({
-        facility: d.facility ?? null, department: d.department ?? null, visitRef: d.visitRef ?? null,
+        type: d.feedbackType || 'SERVICE', hospitalId: d.hospitalId ?? null, facility: d.facility ?? null, department: d.department ?? null, visitRef: d.visitRef ?? null,
         overall: d.ratingOverall, staff: d.ratingStaff ?? null, clean: d.ratingCleanliness ?? null, wait: d.ratingWaiting ?? null,
+        ease: d.ratingEase ?? null, speed: d.ratingSpeed ?? null,
         rec: d.wouldRecommend === undefined ? null : (d.wouldRecommend ? 1 : 0),
         comment: d.comment ?? null, anon: d.isAnonymous === false ? 0 : 1, pname: d.patientName ?? null, pmobile: d.patientMobile ?? null
     });
     const id = Number(info.lastInsertRowid);
     db.prepare('UPDATE feedback SET ref_no = ? WHERE id = ?').run(buildRef('FBK', id), id);
 
-    // Closed-loop: a poor rating (<=2) becomes a grievance so someone actually follows up.
+    // Closed-loop: a poor SERVICE rating (<=2) becomes a grievance so someone follows up.
+    // (APP feedback is about the software, not the hospital service, so it isn't converted.)
     let linkedGrievance = null;
-    if (d.ratingOverall <= 2) {
+    if (d.ratingOverall <= 2 && (d.feedbackType || 'SERVICE') === 'SERVICE') {
         linkedGrievance = createGrievance({
             subject: `Low patient feedback (${d.ratingOverall}/5)${d.department ? ' — ' + d.department : ''}`,
             description: d.comment?.trim() ? d.comment.trim() : `Patient rated the experience ${d.ratingOverall}/5. No comment provided.`,
@@ -82,7 +89,9 @@ router.get('/analytics', authenticate, asyncHandler((req, res) => {
     const distribution = db.prepare('SELECT rating_overall AS rating, COUNT(*) AS count FROM feedback GROUP BY rating_overall ORDER BY rating_overall').all();
     const byDepartment = db.prepare(`SELECT COALESCE(department,'—') AS department, COUNT(*) AS count, ROUND(AVG(rating_overall),2) AS avgOverall
         FROM feedback GROUP BY department ORDER BY avgOverall ASC`).all();
-    sendSuccess(res, { totals, distribution, byDepartment }, 'Feedback analytics');
+    const byType = db.prepare("SELECT feedback_type AS type, COUNT(*) AS count, ROUND(AVG(rating_overall),2) AS avgOverall FROM feedback GROUP BY feedback_type").all();
+    const app = db.prepare("SELECT ROUND(AVG(rating_ease),2) AS avgEase, ROUND(AVG(rating_speed),2) AS avgSpeed, COUNT(*) AS count FROM feedback WHERE feedback_type='APP'").get();
+    sendSuccess(res, { totals, distribution, byDepartment, byType, app }, 'Feedback analytics');
 }));
 
 // Staff — list

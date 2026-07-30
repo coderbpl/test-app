@@ -43,11 +43,28 @@ const FEEDBACK = [
     { dept: 'Emergency', overall: 5, staff: 5, clean: 4, wait: 4, rec: 1, comment: 'Fast emergency response, thankful.' }
 ];
 
+const HOSPITALS = [
+    { name: 'Hamidia Hospital, Bhopal',        name_hi: 'हमीदिया अस्पताल, भोपाल',        district: 'Bhopal',   type: 'MC' },
+    { name: 'JP District Hospital, Bhopal',    name_hi: 'जेपी जिला अस्पताल, भोपाल',       district: 'Bhopal',   type: 'DH' },
+    { name: 'Gandhi Medical College, Bhopal',  name_hi: 'गांधी चिकित्सा महाविद्यालय, भोपाल', district: 'Bhopal',   type: 'MC' },
+    { name: 'District Hospital, Indore',       name_hi: 'जिला अस्पताल, इंदौर',            district: 'Indore',   type: 'DH' },
+    { name: 'MY Hospital, Indore',             name_hi: 'एमवाय अस्पताल, इंदौर',           district: 'Indore',   type: 'MC' },
+    { name: 'District Hospital, Gwalior',      name_hi: 'जिला अस्पताल, ग्वालियर',         district: 'Gwalior',  type: 'DH' },
+    { name: 'District Hospital, Jabalpur',     name_hi: 'जिला अस्पताल, जबलपुर',           district: 'Jabalpur', type: 'DH' },
+    { name: 'CHC Bairagarh, Bhopal',           name_hi: 'सीएचसी बैरागढ़, भोपाल',          district: 'Bhopal',   type: 'CHC' }
+];
+
 export function seed() {
     migrate();
 
     const insCat = db.prepare('INSERT OR IGNORE INTO grievance_categories (code, name, name_hi, default_priority, sla_hours) VALUES (@code, @name, @name_hi, @pr, @sla)');
     db.transaction((rows) => rows.forEach((r) => insCat.run(r)))(CATEGORIES);
+
+    if (db.prepare('SELECT COUNT(*) AS n FROM hospitals').get().n === 0) {
+        const insH = db.prepare('INSERT INTO hospitals (name, name_hi, district, type) VALUES (@name, @name_hi, @district, @type)');
+        db.transaction((rows) => rows.forEach((h) => insH.run(h)))(HOSPITALS);
+        console.log(`[seed] ${HOSPITALS.length} hospitals`); // eslint-disable-line no-console
+    }
 
     if (db.prepare('SELECT COUNT(*) AS n FROM staff').get().n === 0) {
         db.prepare('INSERT INTO staff (name, email, password_hash, role, department, tier, skills) VALUES (?, ?, ?, ?, ?, ?, ?)')

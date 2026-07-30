@@ -20,5 +20,21 @@ export const env = Object.freeze({
     },
     dbFile: fromRoot(process.env.DB_FILE || './data/hmis-grievance.db'),
     projectRoot,
-    slaSweepCron: process.env.SLA_SWEEP_CRON || '*/15 * * * *'
+    slaSweepCron: process.env.SLA_SWEEP_CRON || '*/15 * * * *',
+
+    // AI for "Rewrite with AI". Local-first (Ollama) so grievance text — which may contain
+    // patient details — never leaves the server. provider: 'ollama' | 'groq' | 'none'.
+    ai: {
+        provider: (process.env.AI_PROVIDER || 'ollama').toLowerCase(),
+        timeoutMs: Number(process.env.AI_TIMEOUT_MS || 30000),
+        ollama: {
+            baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
+            model: process.env.OLLAMA_MODEL || 'llama3.2:3b'
+        },
+        groq: {
+            apiKey: process.env.GROQ_API_KEY || '',
+            baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+            model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+        }
+    }
 });

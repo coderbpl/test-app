@@ -11,7 +11,7 @@
         <div class="crest">⚕️</div>
         <div>
             <div class="name"><span class="hin">मध्य प्रदेश शासन</span> · Government of Madhya Pradesh</div>
-            <div class="facility">लोक स्वास्थ्य एवं चिकित्सा शिक्षा · District Hospital, Bhopal</div>
+            <div class="facility hin">लोक स्वास्थ्य एवं चिकित्सा शिक्षा · Public Health &amp; Medical Education</div>
         </div>
         <div class="spacer"></div>
         <a class="link" href="/console.html">Staff login →</a>
@@ -32,10 +32,16 @@
                 <div class="sub">Your complaint is routed to the right officer and tracked against a service deadline (SLA).</div>
                 <div id="gNotice"></div>
                 <form id="gForm">
+                    <label>Hospital <span class="hin opt">· अस्पताल</span></label>
+                    <select id="gHosp"><option value="">Select hospital / अस्पताल चुनें</option></select>
                     <label>Category <span class="hin opt">· श्रेणी</span></label>
                     <select id="gCat"><option value="">Select / चुनें</option></select>
-                    <label>Describe your complaint <span class="hin opt">· विवरण</span> *</label>
-                    <textarea id="gDesc" required placeholder="e.g. दवाई नहीं मिली और 3 घंटे इंतजार करना पड़ा…"></textarea>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 5px">
+                        <label style="margin:0">Describe your complaint <span class="hin opt">· विवरण</span> *</label>
+                        <button type="button" class="btn ghost" id="gRewrite" style="padding:6px 12px;font-size:13px">✨ Rewrite with AI</button>
+                    </div>
+                    <textarea id="gDesc" maxlength="2000" required placeholder="e.g. दवाई नहीं मिली और 3 घंटे इंतजार करना पड़ा…"></textarea>
+                    <div class="help" style="text-align:right"><span id="gCount">0</span>/2000</div>
                     <div class="row">
                         <div><label>Department <span class="opt">(optional)</span></label><input id="gDept" placeholder="OPD / Pharmacy / Lab…" /></div>
                     </div>
@@ -61,14 +67,30 @@
                 <h2>Rate your experience <span class="hin" style="font-weight:600">· अपना अनुभव बताएं</span></h2>
                 <div class="sub">Your feedback helps us improve. Low ratings are followed up automatically.</div>
                 <div id="fNotice"></div>
-                <label>Department <span class="opt">(optional)</span></label>
-                <input id="fDept" placeholder="OPD / Pharmacy / Emergency…" />
+
+                <label>What is this feedback about? <span class="hin opt">· किस बारे में?</span></label>
+                <div class="btn-row" style="margin-top:6px">
+                    <button type="button" class="btn ghost" id="ftService">🏥 Hospital service <span class="hin">· सेवा</span></button>
+                    <button type="button" class="btn ghost" id="ftApp">📱 HMIS app <span class="hin">· ऐप</span></button>
+                </div>
+
+                <label style="margin-top:12px">Hospital <span class="hin opt">· अस्पताल</span></label>
+                <select id="fHosp"><option value="">Select hospital / अस्पताल चुनें</option></select>
+
+                <div id="fDeptWrap"><label>Department <span class="opt">(optional)</span></label>
+                <input id="fDept" placeholder="OPD / Pharmacy / Emergency…" /></div>
 
                 <div style="margin-top:14px">
                     <div class="rate-row"><span class="lbl">Overall <span class="hin opt">· कुल</span> *</span><div class="stars" data-key="overall"></div></div>
-                    <div class="rate-row"><span class="lbl">Staff behaviour <span class="hin opt">· स्टाफ</span></span><div class="stars" data-key="staff"></div></div>
-                    <div class="rate-row"><span class="lbl">Cleanliness <span class="hin opt">· साफ-सफाई</span></span><div class="stars" data-key="cleanliness"></div></div>
-                    <div class="rate-row"><span class="lbl">Waiting time <span class="hin opt">· प्रतीक्षा</span></span><div class="stars" data-key="waiting"></div></div>
+                    <div id="svcRates">
+                        <div class="rate-row"><span class="lbl">Staff behaviour <span class="hin opt">· स्टाफ</span></span><div class="stars" data-key="staff"></div></div>
+                        <div class="rate-row"><span class="lbl">Cleanliness <span class="hin opt">· साफ-सफाई</span></span><div class="stars" data-key="cleanliness"></div></div>
+                        <div class="rate-row"><span class="lbl">Waiting time <span class="hin opt">· प्रतीक्षा</span></span><div class="stars" data-key="waiting"></div></div>
+                    </div>
+                    <div id="appRates" class="hidden">
+                        <div class="rate-row"><span class="lbl">Ease of use <span class="hin opt">· उपयोग में आसानी</span></span><div class="stars" data-key="ease"></div></div>
+                        <div class="rate-row"><span class="lbl">Speed &amp; reliability <span class="hin opt">· गति</span></span><div class="stars" data-key="speed"></div></div>
+                    </div>
                 </div>
                 <label style="margin-top:14px">Would you recommend this hospital? <span class="hin opt">· क्या आप सुझाएंगे?</span></label>
                 <div class="btn-row" style="margin-top:6px">
@@ -106,13 +128,33 @@
         // Categories
         api('/grievances/categories').then(r => { const s = $('gCat'); r.data.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.name} · ${c.nameHi || ''}`; s.appendChild(o); }); }).catch(() => {});
 
+        // Hospitals (both grievance + feedback dropdowns)
+        api('/hospitals').then(r => { ['gHosp', 'fHosp'].forEach(id => r.data.forEach(h => { const o = document.createElement('option'); o.value = h.id; o.textContent = `${h.name}${h.district ? ' · ' + h.district : ''}`; $(id).appendChild(o); })); }).catch(() => {});
+
+        // Description character counter
+        const gCount = () => { $('gCount').textContent = $('gDesc').value.length; };
+        $('gDesc').addEventListener('input', gCount);
+
+        // Rewrite with AI
+        $('gRewrite').addEventListener('click', async () => {
+            const text = $('gDesc').value.trim();
+            if (text.length < 3) { $('gNotice').innerHTML = '<div class="notice info">Write a few words first, then let AI polish it.</div>'; return; }
+            const b = $('gRewrite'); const orig = b.innerHTML; b.disabled = true; b.textContent = 'Rewriting…'; $('gNotice').innerHTML = '';
+            try {
+                const r = await api('/grievances/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+                if (r.data.aiAvailable && r.data.rewritten) { $('gDesc').value = r.data.rewritten.slice(0, 2000); gCount(); $('gNotice').innerHTML = '<div class="notice ok">Description rewritten by AI.</div>'; }
+                else { $('gNotice').innerHTML = `<div class="notice info">${r.message} — kept your text.</div>`; }
+            } catch (e) { $('gNotice').innerHTML = `<div class="notice err">${e.message}</div>`; }
+            finally { b.disabled = false; b.innerHTML = orig; }
+        });
+
         // Anonymous toggle
         $('gAnon').addEventListener('change', e => $('gContact').classList.toggle('hidden', e.target.checked));
 
         // Grievance submit
         $('gForm').addEventListener('submit', async e => {
             e.preventDefault();
-            const p = { description: $('gDesc').value.trim(), isAnonymous: $('gAnon').checked, department: $('gDept').value.trim() || undefined, categoryId: $('gCat').value ? Number($('gCat').value) : undefined };
+            const p = { description: $('gDesc').value.trim(), isAnonymous: $('gAnon').checked, department: $('gDept').value.trim() || undefined, categoryId: $('gCat').value ? Number($('gCat').value) : undefined, hospitalId: $('gHosp').value ? Number($('gHosp').value) : undefined };
             if (!$('gAnon').checked) { p.complainantName = $('gName').value.trim() || undefined; p.complainantMobile = $('gMobile').value.trim() || undefined; }
             const b = $('gSubmit'); b.disabled = true; b.textContent = 'Submitting…'; $('gNotice').innerHTML = '';
             try { const r = await api('/grievances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
@@ -120,8 +162,22 @@
             } catch (err) { $('gNotice').innerHTML = `<div class="notice err">${err.message}</div>`; b.disabled = false; b.textContent = 'Submit grievance'; }
         });
 
+        // Feedback type toggle (Hospital service vs HMIS app)
+        let feedbackType = 'SERVICE';
+        function setType(t) {
+            feedbackType = t;
+            $('ftService').classList.toggle('amber', t === 'SERVICE');
+            $('ftApp').classList.toggle('amber', t === 'APP');
+            $('svcRates').classList.toggle('hidden', t !== 'SERVICE');
+            $('appRates').classList.toggle('hidden', t !== 'APP');
+            $('fDeptWrap').classList.toggle('hidden', t !== 'SERVICE');
+        }
+        $('ftService').addEventListener('click', () => setType('SERVICE'));
+        $('ftApp').addEventListener('click', () => setType('APP'));
+        setType('SERVICE');
+
         // Star ratings
-        const ratings = { overall: 0, staff: 0, cleanliness: 0, waiting: 0 };
+        const ratings = { overall: 0, staff: 0, cleanliness: 0, waiting: 0, ease: 0, speed: 0 };
         document.querySelectorAll('.stars').forEach(box => {
             const key = box.dataset.key;
             for (let i = 1; i <= 5; i++) { const s = document.createElement('span'); s.className = 's'; s.textContent = '★'; s.dataset.v = i; box.appendChild(s); }
@@ -133,8 +189,11 @@
 
         $('fSubmit').addEventListener('click', async () => {
             if (!ratings.overall) { $('fNotice').innerHTML = '<div class="notice err">Please give an overall rating.</div>'; return; }
-            const p = { department: $('fDept').value.trim() || undefined, ratingOverall: ratings.overall,
+            const p = { feedbackType, hospitalId: $('fHosp').value ? Number($('fHosp').value) : undefined,
+                department: feedbackType === 'SERVICE' ? ($('fDept').value.trim() || undefined) : undefined,
+                ratingOverall: ratings.overall,
                 ratingStaff: ratings.staff || undefined, ratingCleanliness: ratings.cleanliness || undefined, ratingWaiting: ratings.waiting || undefined,
+                ratingEase: ratings.ease || undefined, ratingSpeed: ratings.speed || undefined,
                 wouldRecommend, comment: $('fComment').value.trim() || undefined };
             const b = $('fSubmit'); b.disabled = true; b.textContent = 'Submitting…'; $('fNotice').innerHTML = '';
             try { const r = await api('/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });

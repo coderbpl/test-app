@@ -17,6 +17,16 @@ CREATE TABLE IF NOT EXISTS staff (
     created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- Hospitals master (selectable in the patient forms) -----------------------------------
+CREATE TABLE IF NOT EXISTS hospitals (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT    NOT NULL,
+    name_hi   TEXT,
+    district  TEXT,
+    type      TEXT,   -- DH (District Hospital), CHC, PHC, MC (Medical College)
+    status    INTEGER NOT NULL DEFAULT 1
+);
+
 -- ============================ GRIEVANCES ============================
 CREATE TABLE IF NOT EXISTS grievance_categories (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,6 +49,7 @@ CREATE TABLE IF NOT EXISTS grievances (
     complainant_name    TEXT,
     complainant_mobile  TEXT,
     complainant_email   TEXT,
+    hospital_id         INTEGER REFERENCES hospitals(id),
     facility            TEXT,
     department          TEXT,
     priority            TEXT    NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
@@ -78,6 +89,9 @@ CREATE INDEX IF NOT EXISTS ix_grv_tl ON grievance_timeline (grievance_id, create
 CREATE TABLE IF NOT EXISTS feedback (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ref_no              TEXT    UNIQUE,
+    -- What the feedback is about: the hospital SERVICE experience, or the HMIS APPlication itself.
+    feedback_type       TEXT    NOT NULL DEFAULT 'SERVICE' CHECK (feedback_type IN ('SERVICE','APP')),
+    hospital_id         INTEGER REFERENCES hospitals(id),
     facility            TEXT,
     department          TEXT,
     visit_ref           TEXT,   -- optional OPD token / UHID reference
@@ -85,7 +99,10 @@ CREATE TABLE IF NOT EXISTS feedback (
     rating_staff        INTEGER CHECK (rating_staff BETWEEN 1 AND 5),
     rating_cleanliness  INTEGER CHECK (rating_cleanliness BETWEEN 1 AND 5),
     rating_waiting      INTEGER CHECK (rating_waiting BETWEEN 1 AND 5),
-    would_recommend     INTEGER,  -- 1 yes / 0 no
+    -- APP-feedback dimensions
+    rating_ease         INTEGER CHECK (rating_ease BETWEEN 1 AND 5),
+    rating_speed        INTEGER CHECK (rating_speed BETWEEN 1 AND 5),
+    would_recommend     INTEGER,  -- 1 yes / 0 no (recommend this hospital)
     comment             TEXT,
     is_anonymous        INTEGER NOT NULL DEFAULT 1,
     patient_name        TEXT,

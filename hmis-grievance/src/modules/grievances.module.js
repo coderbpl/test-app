@@ -3,6 +3,7 @@ import Joi from 'joi';
 import { db } from '../config/db.js';
 import { sendSuccess, sendCreated, sendPaginated, asyncHandler, sanitizePagination, buildRef, NotFoundError, BadRequestError } from '../utils/index.js';
 import { authenticate, vBody, vParams, vQuery } from '../middlewares/index.js';
+import { rewriteText, aiEnabled } from './ai.service.js';
 
 const nowIso = () => new Date().toISOString();
 const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
@@ -13,14 +14,19 @@ const NEXT_TIER = { FACILITY: 'DISTRICT', BLOCK: 'DISTRICT', DISTRICT: 'DIVISION
 // ---- Validation ----
 const createSchema = Joi.object({
     categoryId: Joi.number().integer().positive().optional(),
+    hospitalId: Joi.number().integer().positive().optional(),
     subject: Joi.string().max(250).allow('', null),
-    description: Joi.string().min(5).max(5000).required(),
+    description: Joi.string().min(5).max(2000).required(),
     isAnonymous: Joi.boolean().default(false),
     complainantName: Joi.string().max(150).allow('', null),
     complainantMobile: Joi.string().max(20).allow('', null),
     complainantEmail: Joi.string().email({ tlds: { allow: false } }).allow('', null),
     facility: Joi.string().max(150).allow('', null),
     department: Joi.string().max(100).allow('', null)
+});
+const rewriteSchema = Joi.object({
+    subject: Joi.string().max(250).allow('', null),
+    text: Joi.string().min(3).max(2000).required()
 });
 const idParam = Joi.object({ id: Joi.number().integer().positive().required() });
 const refParam = Joi.object({ refNo: Joi.string().max(30).required() });
@@ -71,11 +77,11 @@ export function createGrievance(dto, { actorName = null, actorId = null } = {}) 
     const slaDueAt = new Date(Date.now() + slaHours * 3600 * 1000).toISOString();
     const tx = db.transaction(() => {
         const info = db.prepare(
-            `INSERT INTO grievances (category_id, subject, description, is_anonymous, complainant_name, complainant_mobile,
+            `INSERT INTO grievances (category_id, hospital_id, subject, description, is_anonymous, complainant_name, complainant_mobile,
                                      complainant_email, facility, department, priority, status, sla_due_at, current_owner_tier)
-             VALUES (@categoryId, @subject, @description, @isAnonymous, @cname, @cmobile, @cemail, @facility, @department, @priority, 'NEW', @slaDueAt, 'FACILITY')`
+             VALUES (@categoryId, @hospitalId, @subject, @description, @isAnonymous, @cname, @cmobile, @cemail, @facility, @department, @priority, 'NEW', @slaDueAt, 'FACILITY')`
         ).run({
-            categoryId: dto.categoryId ?? null, subject: dto.subject ?? null, description: dto.description,
+            categoryId: dto.categoryId ?? null, hospitalId: dto.hospitalId ?? null, subject: dto.subject ?? null, description: dto.description,
             isAnonymous: dto.isAnonymous ? 1 : 0, cname: dto.complainantName ?? null, cmobile: dto.complainantMobile ?? null,
             cemail: dto.complainantEmail ?? null, facility: dto.facility ?? null, department: dto.department ?? null,
             priority, slaDueAt
@@ -119,6 +125,11 @@ const router = Router();
 
 router.get('/categories', asyncHandler((req, res) => {
     sendSuccess(res, db.prepare('SELECT id, code, name, name_hi AS nameHi, default_priority AS defaultPriority, sla_hours AS slaHours FROM grievance_categories WHERE status = 1 ORDER BY name').all(), 'Categories');
+}));
+
+router.post('/rewrite', vBody(rewriteSchema), asyncHandler(async (req, res) => {
+    const rewritten = await rewriteText({ subject: req.body.subject, text: req.body.text });
+    sendSuccess(res, { rewritten, aiAvailable: rewritten !== null }, rewritten ? 'Rewritten' : (aiEnabled() ? 'AI service is not reachable' : 'AI is not configured'));
 }));
 
 router.post('/', vBody(createSchema), asyncHandler((req, res) => {

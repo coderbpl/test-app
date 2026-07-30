@@ -24,7 +24,7 @@
     <!-- SHELL -->
     <div class="shell hidden" id="shell">
         <aside class="rail" id="rail">
-            <div class="head"><div class="crest">⚕️</div><div class="t">MP HMIS<br><span style="font-weight:400;opacity:.7;font-size:11px">District Hospital</span></div></div>
+            <div class="head"><div class="crest">⚕️</div><div class="t">MP HMIS<br><span style="font-weight:400;opacity:.7;font-size:11px">Grievance Cell</span></div></div>
             <nav>
                 <button class="navitem active" data-p="dashboard"><span class="ic">▩</span><span>Dashboard<span class="hin">डैशबोर्ड</span></span></button>
                 <button class="navitem" data-p="grievances"><span class="ic">⚑</span><span>Grievances<span class="hin">शिकायतें</span></span></button>
@@ -36,7 +36,7 @@
 
         <div class="main">
             <div class="topbar">
-                <h1 id="panelTitle">Dashboard</h1><div class="facility">· District Hospital, Bhopal</div>
+                <h1 id="panelTitle">Dashboard</h1>
                 <div style="flex:1"></div>
                 <a class="btn ghost" href="/" target="_blank">Public site ↗</a>
             </div>
@@ -183,11 +183,14 @@
                     <div class="stat"><div class="num">${a.totals.avgWaiting ?? '—'}</div><div class="lbl">Waiting</div></div>
                     <div class="stat ok"><div class="num">${a.totals.pctRecommend ?? '—'}%</div><div class="lbl">Recommend</div></div>
                 </div>
-                <div class="card"><h2 style="font-size:15px">By department</h2>
+                <div class="card"><h2 style="font-size:15px">By feedback type</h2>
+                    <table><thead><tr><th>Type</th><th>Responses</th><th>Avg overall</th></tr></thead><tbody>${(a.byType || []).map(t => `<tr><td>${t.type === 'APP' ? '📱 HMIS app' : '🏥 Hospital service'}</td><td>${t.count}</td><td>${pill(t.avgOverall >= 4 ? 'MEDIUM' : t.avgOverall >= 3 ? 'HIGH' : 'CRITICAL', (t.avgOverall ?? '—') + ' ★')}</td></tr>`).join('')}</tbody></table>
+                    ${a.app && a.app.count ? `<div class="help" style="margin-top:8px">📱 HMIS app — ease of use: <strong>${a.app.avgEase ?? '—'}</strong> · speed/reliability: <strong>${a.app.avgSpeed ?? '—'}</strong> (${a.app.count} responses)</div>` : ''}</div>
+                <div class="card"><h2 style="font-size:15px">By department <span class="muted" style="font-weight:400">(hospital service)</span></h2>
                     <table><thead><tr><th>Department</th><th>Responses</th><th>Avg overall</th></tr></thead><tbody>${a.byDepartment.map(d => `<tr><td>${esc(d.department)}</td><td>${d.count}</td><td>${pill(d.avgOverall >= 4 ? 'MEDIUM' : d.avgOverall >= 3 ? 'HIGH' : 'CRITICAL', (d.avgOverall ?? '—') + ' ★')}</td></tr>`).join('')}</tbody></table></div>
                 <div class="card"><h2 style="font-size:15px">Recent feedback</h2>
-                    <table><thead><tr><th>Ref</th><th>Dept</th><th>Overall</th><th>Comment</th><th>Follow-up</th></tr></thead><tbody>${
-                    list.map(f => `<tr><td>${esc(f.refNo)}</td><td>${esc(f.department || '—')}</td><td>${pill(f.ratingOverall >= 4 ? 'MEDIUM' : f.ratingOverall >= 3 ? 'HIGH' : 'CRITICAL', f.ratingOverall + '/5')}</td><td>${esc((f.comment || '').slice(0, 60))}</td><td class="muted">${f.linkedGrievanceId ? '⚑ grievance #' + f.linkedGrievanceId : '—'}</td></tr>`).join('')
+                    <table><thead><tr><th>Ref</th><th>Type</th><th>Overall</th><th>Comment</th><th>Follow-up</th></tr></thead><tbody>${
+                    list.map(f => `<tr><td>${esc(f.refNo)}</td><td>${f.feedbackType === 'APP' ? '📱 App' : '🏥 ' + esc(f.department || 'Service')}</td><td>${pill(f.ratingOverall >= 4 ? 'MEDIUM' : f.ratingOverall >= 3 ? 'HIGH' : 'CRITICAL', f.ratingOverall + '/5')}</td><td>${esc((f.comment || '').slice(0, 60))}</td><td class="muted">${f.linkedGrievanceId ? '⚑ grievance #' + f.linkedGrievanceId : '—'}</td></tr>`).join('')
                     }</tbody></table></div>`;
         }
 
