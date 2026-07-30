@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MP HMIS — Grievance & Feedback | शिकायत एवं प्रतिक्रिया</title>
+    <link rel="stylesheet" href="/hmis.css" />
+</head>
+<body>
+    <div class="brandbar">
+        <div class="crest">⚕️</div>
+        <div>
+            <div class="name"><span class="hin">मध्य प्रदेश शासन</span> · Government of Madhya Pradesh</div>
+            <div class="facility">लोक स्वास्थ्य एवं चिकित्सा शिक्षा · District Hospital, Bhopal</div>
+        </div>
+        <div class="spacer"></div>
+        <a class="link" href="/console.html">Staff login →</a>
+    </div>
+    <div class="stripe"></div>
+
+    <div class="wrap">
+        <div class="tabs">
+            <button class="tab active" data-tab="grievance">File a Grievance <span class="hin">शिकायत दर्ज करें</span></button>
+            <button class="tab" data-tab="feedback">Give Feedback <span class="hin">प्रतिक्रिया दें</span></button>
+            <button class="tab" data-tab="track">Track Status <span class="hin">स्थिति देखें</span></button>
+        </div>
+
+        <!-- GRIEVANCE -->
+        <section id="tab-grievance">
+            <div class="card">
+                <h2>File a grievance <span class="hin" style="font-weight:600">· शिकायत</span></h2>
+                <div class="sub">Your complaint is routed to the right officer and tracked against a service deadline (SLA).</div>
+                <div id="gNotice"></div>
+                <form id="gForm">
+                    <label>Category <span class="hin opt">· श्रेणी</span></label>
+                    <select id="gCat"><option value="">Select / चुनें</option></select>
+                    <label>Describe your complaint <span class="hin opt">· विवरण</span> *</label>
+                    <textarea id="gDesc" required placeholder="e.g. दवाई नहीं मिली और 3 घंटे इंतजार करना पड़ा…"></textarea>
+                    <div class="row">
+                        <div><label>Department <span class="opt">(optional)</span></label><input id="gDept" placeholder="OPD / Pharmacy / Lab…" /></div>
+                    </div>
+                    <label style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="gAnon" style="width:auto"> File anonymously <span class="hin opt">· गुमनाम</span></label>
+                    <div id="gContact" class="row">
+                        <div><label>Your name</label><input id="gName" /></div>
+                        <div><label>Mobile</label><input id="gMobile" /></div>
+                    </div>
+                    <div class="btn-row"><button type="submit" id="gSubmit">Submit grievance <span class="hin">· दर्ज करें</span></button></div>
+                </form>
+            </div>
+            <div class="card hidden" id="gOk">
+                <h2>✅ Grievance filed <span class="hin" style="font-weight:600">· शिकायत दर्ज</span></h2>
+                <p>Save your tracking number:</p>
+                <p class="ref" id="gRef" style="font-size:20px"></p>
+                <div class="btn-row"><button class="ghost" onclick="location.reload()">File another</button></div>
+            </div>
+        </section>
+
+        <!-- FEEDBACK -->
+        <section id="tab-feedback" class="hidden">
+            <div class="card">
+                <h2>Rate your experience <span class="hin" style="font-weight:600">· अपना अनुभव बताएं</span></h2>
+                <div class="sub">Your feedback helps us improve. Low ratings are followed up automatically.</div>
+                <div id="fNotice"></div>
+                <label>Department <span class="opt">(optional)</span></label>
+                <input id="fDept" placeholder="OPD / Pharmacy / Emergency…" />
+
+                <div style="margin-top:14px">
+                    <div class="rate-row"><span class="lbl">Overall <span class="hin opt">· कुल</span> *</span><div class="stars" data-key="overall"></div></div>
+                    <div class="rate-row"><span class="lbl">Staff behaviour <span class="hin opt">· स्टाफ</span></span><div class="stars" data-key="staff"></div></div>
+                    <div class="rate-row"><span class="lbl">Cleanliness <span class="hin opt">· साफ-सफाई</span></span><div class="stars" data-key="cleanliness"></div></div>
+                    <div class="rate-row"><span class="lbl">Waiting time <span class="hin opt">· प्रतीक्षा</span></span><div class="stars" data-key="waiting"></div></div>
+                </div>
+                <label style="margin-top:14px">Would you recommend this hospital? <span class="hin opt">· क्या आप सुझाएंगे?</span></label>
+                <div class="btn-row" style="margin-top:6px">
+                    <button type="button" class="ghost" id="recYes">👍 Yes / हाँ</button>
+                    <button type="button" class="ghost" id="recNo">👎 No / नहीं</button>
+                </div>
+                <label style="margin-top:14px">Comments <span class="opt">(optional)</span></label>
+                <textarea id="fComment" placeholder="Tell us more…"></textarea>
+                <div class="btn-row"><button type="button" id="fSubmit" class="amber">Submit feedback <span class="hin">· भेजें</span></button></div>
+            </div>
+            <div class="card hidden" id="fOk"><h2>🙏 Thank you <span class="hin" style="font-weight:600">· धन्यवाद</span></h2><p id="fOkMsg"></p><div class="btn-row"><button class="ghost" onclick="location.reload()">Done</button></div></div>
+        </section>
+
+        <!-- TRACK -->
+        <section id="tab-track" class="hidden">
+            <div class="card">
+                <h2>Track a grievance <span class="hin" style="font-weight:600">· स्थिति देखें</span></h2>
+                <div class="sub">Enter your tracking number (e.g. GRV-2026-000123).</div>
+                <div class="row"><input id="tRef" placeholder="GRV-2026-000123" /><button id="tBtn" style="flex:0 0 auto">Check / देखें</button></div>
+                <div id="tResult"></div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const api = (p, o) => fetch('/api' + p, o).then(async r => { const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.error || 'Request failed'); return b; });
+        const $ = id => document.getElementById(id);
+        const esc = s => s == null ? '' : String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+        document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(x => x.classList.remove('active')); t.classList.add('active');
+            ['grievance', 'feedback', 'track'].forEach(n => $('tab-' + n).classList.toggle('hidden', n !== t.dataset.tab));
+        }));
+
+        // Categories
+        api('/grievances/categories').then(r => { const s = $('gCat'); r.data.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.name} · ${c.nameHi || ''}`; s.appendChild(o); }); }).catch(() => {});
+
+        // Anonymous toggle
+        $('gAnon').addEventListener('change', e => $('gContact').classList.toggle('hidden', e.target.checked));
+
+        // Grievance submit
+        $('gForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const p = { description: $('gDesc').value.trim(), isAnonymous: $('gAnon').checked, department: $('gDept').value.trim() || undefined, categoryId: $('gCat').value ? Number($('gCat').value) : undefined };
+            if (!$('gAnon').checked) { p.complainantName = $('gName').value.trim() || undefined; p.complainantMobile = $('gMobile').value.trim() || undefined; }
+            const b = $('gSubmit'); b.disabled = true; b.textContent = 'Submitting…'; $('gNotice').innerHTML = '';
+            try { const r = await api('/grievances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+                $('gForm').classList.add('hidden'); $('gRef').textContent = r.data.refNo; $('gOk').classList.remove('hidden');
+            } catch (err) { $('gNotice').innerHTML = `<div class="notice err">${err.message}</div>`; b.disabled = false; b.textContent = 'Submit grievance'; }
+        });
+
+        // Star ratings
+        const ratings = { overall: 0, staff: 0, cleanliness: 0, waiting: 0 };
+        document.querySelectorAll('.stars').forEach(box => {
+            const key = box.dataset.key;
+            for (let i = 1; i <= 5; i++) { const s = document.createElement('span'); s.className = 's'; s.textContent = '★'; s.dataset.v = i; box.appendChild(s); }
+            box.addEventListener('click', e => { if (!e.target.dataset.v) return; ratings[key] = Number(e.target.dataset.v); box.querySelectorAll('.s').forEach(s => s.classList.toggle('on', Number(s.dataset.v) <= ratings[key])); });
+        });
+        let wouldRecommend;
+        $('recYes').addEventListener('click', () => { wouldRecommend = true; $('recYes').classList.add('amber'); $('recNo').classList.remove('amber'); });
+        $('recNo').addEventListener('click', () => { wouldRecommend = false; $('recNo').classList.add('amber'); $('recYes').classList.remove('amber'); });
+
+        $('fSubmit').addEventListener('click', async () => {
+            if (!ratings.overall) { $('fNotice').innerHTML = '<div class="notice err">Please give an overall rating.</div>'; return; }
+            const p = { department: $('fDept').value.trim() || undefined, ratingOverall: ratings.overall,
+                ratingStaff: ratings.staff || undefined, ratingCleanliness: ratings.cleanliness || undefined, ratingWaiting: ratings.waiting || undefined,
+                wouldRecommend, comment: $('fComment').value.trim() || undefined };
+            const b = $('fSubmit'); b.disabled = true; b.textContent = 'Submitting…'; $('fNotice').innerHTML = '';
+            try { const r = await api('/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+                $('fOkMsg').textContent = r.message; document.querySelector('#tab-feedback .card').classList.add('hidden'); $('fOk').classList.remove('hidden');
+            } catch (err) { $('fNotice').innerHTML = `<div class="notice err">${err.message}</div>`; b.disabled = false; b.textContent = 'Submit feedback'; }
+        });
+
+        // Track
+        $('tBtn').addEventListener('click', async () => {
+            const ref = $('tRef').value.trim(); if (!ref) return;
+            $('tResult').innerHTML = '<p class="muted">Looking up…</p>';
+            try { const r = await api('/grievances/track/' + encodeURIComponent(ref)); const g = r.data;
+                $('tResult').innerHTML = `<div class="notice info" style="margin-top:16px"><span class="ref">${esc(g.refNo)}</span> &nbsp;
+                    <span class="pill status">${g.status}</span> <span class="pill ${g.priority}">${g.priority}</span> ${g.categoryName ? '· ' + esc(g.categoryName) : ''}
+                    <div class="meta" style="margin-top:5px">Filed ${new Date(g.createdAt).toLocaleString()}</div></div>
+                    <ul class="timeline">${g.timeline.map(t => `<li><strong>${esc(t.eventType.replace(/_/g, ' '))}</strong>${t.toStatus ? ' → ' + esc(t.toStatus) : ''}<div>${esc(t.comment || '')}</div><div class="meta">${esc(t.actorName || '')} · ${new Date(t.createdAt).toLocaleString()}</div></li>`).join('')}</ul>`;
+            } catch (err) { $('tResult').innerHTML = `<div class="notice err">${err.message}</div>`; }
+        });
+    </script>
+</body>
+</html>

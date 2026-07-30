@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MP HMIS — Staff Console</title>
+    <link rel="stylesheet" href="/hmis.css" />
+</head>
+<body>
+    <!-- LOGIN -->
+    <div class="login-wrap" id="loginView">
+        <div class="login-card">
+            <div class="crest" style="display:flex;align-items:center;justify-content:center;color:#fff">⚕️</div>
+            <h2 style="margin:0 0 2px">Staff Console</h2>
+            <div class="muted hin" style="font-size:13px;margin-bottom:14px">एमपी एचएमआईएस — शिकायत, प्रतिक्रिया एवं टिकट</div>
+            <div id="loginNotice"></div>
+            <label>Email</label><input id="email" type="email" value="admin@mphmis.local" />
+            <label>Password</label><input id="password" type="password" value="admin123" />
+            <div class="btn-row"><button id="loginBtn" style="width:100%;justify-content:center">Log in</button></div>
+            <div class="help" style="margin-top:12px">Admin: admin@mphmis.local / admin123 · Staff: ramesh@ / kavita@ / suresh@ / meena@mphmis.local / staff123</div>
+        </div>
+    </div>
+
+    <!-- SHELL -->
+    <div class="shell hidden" id="shell">
+        <aside class="rail" id="rail">
+            <div class="head"><div class="crest">⚕️</div><div class="t">MP HMIS<br><span style="font-weight:400;opacity:.7;font-size:11px">District Hospital</span></div></div>
+            <nav>
+                <button class="navitem active" data-p="dashboard"><span class="ic">▩</span><span>Dashboard<span class="hin">डैशबोर्ड</span></span></button>
+                <button class="navitem" data-p="grievances"><span class="ic">⚑</span><span>Grievances<span class="hin">शिकायतें</span></span></button>
+                <button class="navitem" data-p="feedback"><span class="ic">★</span><span>Feedback<span class="hin">प्रतिक्रिया</span></span></button>
+                <button class="navitem" data-p="tickets"><span class="ic">🛠</span><span>Tickets<span class="hin">टिकट</span></span></button>
+            </nav>
+            <div class="foot"><div class="who" id="who"></div><a href="#" id="logout">Log out</a></div>
+        </aside>
+
+        <div class="main">
+            <div class="topbar">
+                <h1 id="panelTitle">Dashboard</h1><div class="facility">· District Hospital, Bhopal</div>
+                <div style="flex:1"></div>
+                <a class="btn ghost" href="/" target="_blank">Public site ↗</a>
+            </div>
+            <div class="content">
+                <div class="panel active" id="p-dashboard"></div>
+                <div class="panel" id="p-grievances"></div>
+                <div class="panel" id="p-feedback"></div>
+                <div class="panel" id="p-tickets"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-bg" id="modal"><div class="modal"><div class="mhead"><span class="ref" id="mRef"></span><button class="x" id="mClose">&times;</button></div><div class="mbody" id="mBody"></div></div></div>
+
+    <script>
+        let token = localStorage.getItem('hg_token'), me = JSON.parse(localStorage.getItem('hg_me') || 'null'), staff = [];
+        const api = (p, o = {}) => fetch('/api' + p, { ...o, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(o.headers || {}) } })
+            .then(async r => { const b = await r.json().catch(() => ({})); if (r.status === 401) { logout(); throw new Error('Session expired'); } if (!r.ok) throw new Error(b.error || 'Failed'); return b; });
+        const $ = id => document.getElementById(id);
+        const esc = s => s == null ? '' : String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        const pill = (c, t) => `<span class="pill ${c}">${t}</span>`;
+        const dt = s => new Date(s).toLocaleString();
+
+        function logout() { token = me = null; localStorage.removeItem('hg_token'); localStorage.removeItem('hg_me'); $('shell').classList.add('hidden'); $('loginView').classList.remove('hidden'); }
+        $('logout').addEventListener('click', e => { e.preventDefault(); logout(); });
+        $('loginBtn').addEventListener('click', async () => {
+            $('loginNotice').innerHTML = '';
+            try { const r = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: $('email').value, password: $('password').value }) });
+                token = r.data.token; me = r.data.staff; localStorage.setItem('hg_token', token); localStorage.setItem('hg_me', JSON.stringify(me)); boot();
+            } catch (e) { $('loginNotice').innerHTML = `<div class="notice err">${e.message}</div>`; }
+        });
+
+        async function boot() {
+            $('loginView').classList.add('hidden'); $('shell').classList.remove('hidden');
+            $('who').textContent = me.name + ' · ' + me.role;
+            try { staff = (await api('/auth/staff')).data; } catch {}
+            show('dashboard');
+        }
+        const TITLES = { dashboard: 'Dashboard', grievances: 'Grievances', feedback: 'Feedback', tickets: 'Tickets' };
+        document.querySelectorAll('.navitem').forEach(n => n.addEventListener('click', () => show(n.dataset.p)));
+        function show(p) {
+            document.querySelectorAll('.navitem').forEach(n => n.classList.toggle('active', n.dataset.p === p));
+            document.querySelectorAll('.panel').forEach(x => x.classList.toggle('active', x.id === 'p-' + p));
+            $('panelTitle').textContent = TITLES[p];
+            ({ dashboard: loadDashboard, grievances: loadGrievances, feedback: loadFeedback, tickets: loadTickets }[p])();
+        }
+
+        // ---------- DASHBOARD ----------
+        async function loadDashboard() {
+            const el = $('p-dashboard'); el.innerHTML = '<p class="muted">Loading…</p>';
+            const { data: d } = await api('/dashboard');
+            el.innerHTML = `
+                <h3 style="margin:4px 0 10px;color:var(--navy)">⚑ Grievances</h3>
+                <div class="stat-grid">
+                    <div class="stat"><div class="num">${d.grievances.total || 0}</div><div class="lbl">Total</div></div>
+                    <div class="stat"><div class="num">${d.grievances.open || 0}</div><div class="lbl">Open</div></div>
+                    <div class="stat alert"><div class="num">${d.grievances.urgentOpen || 0}</div><div class="lbl">Urgent open</div></div>
+                    <div class="stat amber"><div class="num">${d.grievances.slaBreached || 0}</div><div class="lbl">SLA breached</div></div>
+                    <div class="stat ok"><div class="num">${d.grievances.slaCompliancePct}%</div><div class="lbl">SLA compliance</div></div>
+                </div>
+                <h3 style="margin:14px 0 10px;color:var(--navy)">★ Feedback</h3>
+                <div class="stat-grid">
+                    <div class="stat"><div class="num">${d.feedback.count || 0}</div><div class="lbl">Responses</div></div>
+                    <div class="stat amber"><div class="num">${d.feedback.avgOverall ?? '—'}</div><div class="lbl">Avg rating /5</div></div>
+                    <div class="stat ok"><div class="num">${d.feedback.pctRecommend ?? '—'}%</div><div class="lbl">Would recommend</div></div>
+                    <div class="stat alert"><div class="num">${d.feedback.lowRatings || 0}</div><div class="lbl">Low ratings (≤2)</div></div>
+                </div>
+                <h3 style="margin:14px 0 10px;color:var(--navy)">🛠 Tickets</h3>
+                <div class="stat-grid">
+                    <div class="stat"><div class="num">${d.tickets.total || 0}</div><div class="lbl">Total</div></div>
+                    <div class="stat"><div class="num">${d.tickets.open || 0}</div><div class="lbl">Open</div></div>
+                    <div class="stat ok"><div class="num">${d.tickets.resolved || 0}</div><div class="lbl">Resolved</div></div>
+                </div>`;
+        }
+
+        // ---------- GRIEVANCES ----------
+        async function loadGrievances() {
+            const el = $('p-grievances');
+            el.innerHTML = `<div class="toolbar">
+                <input class="grow" id="gq" placeholder="Search…"/>
+                <select id="gStatus"><option value="">All statuses</option>${['NEW','ACKNOWLEDGED','IN_PROGRESS','RESOLVED','CLOSED','REOPENED'].map(s => `<option>${s}</option>`).join('')}</select>
+                <select id="gPrio"><option value="">All priorities</option>${['CRITICAL','HIGH','MEDIUM','LOW'].map(s => `<option>${s}</option>`).join('')}</select>
+                <button class="ghost" id="gRefresh">Refresh</button></div><div id="gList"><p class="muted">Loading…</p></div>`;
+            const run = async () => {
+                const p = new URLSearchParams({ limit: '100' });
+                if ($('gq').value.trim()) p.set('search', $('gq').value.trim());
+                if ($('gStatus').value) p.set('status', $('gStatus').value);
+                if ($('gPrio').value) p.set('priority', $('gPrio').value);
+                const r = await api('/grievances?' + p);
+                $('gList').innerHTML = r.data.length ? `<table><thead><tr><th>Ref</th><th>Subject</th><th>Priority</th><th>Status</th><th>Owner tier</th></tr></thead><tbody>${
+                    r.data.map(g => `<tr data-id="${g.id}"><td><strong>${esc(g.refNo)}</strong><div class="muted" style="font-size:12px">${esc(g.categoryName || '—')}</div></td>
+                    <td>${esc((g.subject || g.description).slice(0, 60))}</td><td>${pill(g.priority, g.priority)}</td><td>${pill('status', g.status)}${g.slaBreached ? ' ' + pill('breach', 'SLA') : ''}</td><td class="muted">${esc(g.currentOwnerTier)}</td></tr>`).join('')
+                }</tbody></table>` : '<p class="muted">No grievances.</p>';
+                $('gList').querySelectorAll('tbody tr').forEach(tr => tr.addEventListener('click', () => openGrievance(tr.dataset.id)));
+            };
+            $('gRefresh').onclick = run; ['gStatus', 'gPrio'].forEach(id => $(id).onchange = run); $('gq').onkeydown = e => { if (e.key === 'Enter') run(); };
+            run();
+        }
+        async function openGrievance(id) {
+            $('modal').classList.add('open'); $('mBody').innerHTML = '<p class="muted">Loading…</p>';
+            const { data: g } = await api('/grievances/' + id); $('mRef').textContent = g.refNo;
+            const opts = staff.map(s => `<option value="${s.id}">${esc(s.name)}${s.department ? ' — ' + esc(s.department) : ''}</option>`).join('');
+            $('mBody').innerHTML = `
+                <div style="margin-bottom:8px">${pill(g.priority, g.priority)} ${pill('status', g.status)} ${g.isUrgent ? pill('urgent', 'URGENT') : ''}</div>
+                <div class="kv">
+                    <div class="k">Category</div><div>${esc(g.categoryName || '—')} ${g.categoryNameHi ? '<span class="hin muted">· ' + esc(g.categoryNameHi) + '</span>' : ''}</div>
+                    <div class="k">Complaint</div><div>${esc(g.description)}</div>
+                    <div class="k">Department</div><div>${esc(g.department || '—')}</div>
+                    <div class="k">Complainant</div><div>${g.isAnonymous ? 'Anonymous' : esc(g.complainantName || '—') + (g.complainantMobile ? ' · ' + esc(g.complainantMobile) : '')}</div>
+                    <div class="k">Owner tier</div><div>${esc(g.currentOwnerTier)}${g.assignedStaffName ? ' · ' + esc(g.assignedStaffName) : ''}</div>
+                    <div class="k">SLA due</div><div>${g.slaDueAt ? dt(g.slaDueAt) : '—'}</div>
+                </div>
+                <div class="row" style="margin-top:12px">
+                    <select id="gsStatus"><option value="">Change status…</option>${['ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'].map(s => `<option>${s}</option>`).join('')}</select>
+                    <select id="gsAssign"><option value="">Assign to…</option>${opts}</select>
+                    <select id="gsTier"><option value="">Escalate to…</option>${['DISTRICT', 'DIVISION', 'STATE'].map(s => `<option>${s}</option>`).join('')}</select>
+                </div>
+                <textarea id="gsComment" placeholder="Comment / resolution note…" style="margin-top:10px;min-height:64px"></textarea>
+                <div class="btn-row">
+                    <button class="ghost" id="gsApply">Apply status</button>
+                    <button class="ghost" id="gsDoAssign">Assign</button>
+                    <button class="ghost" id="gsDoEsc">Escalate</button>
+                    <button class="ghost" id="gsComm">Add comment</button>
+                </div>
+                <h3 style="margin-top:16px;font-size:14px;color:var(--navy)">Timeline</h3>
+                <ul class="timeline">${g.timeline.map(t => `<li><strong>${esc(t.eventType.replace(/_/g, ' '))}</strong>${t.toStatus ? ' → ' + esc(t.toStatus) : ''}${t.isInternal ? ' ' + pill('breach', 'internal') : ''}<div>${esc(t.comment || '')}</div><div class="meta">${esc(t.actorName || '')} · ${dt(t.createdAt)}</div></li>`).join('')}</ul>`;
+            const reload = async () => { const { data } = await api('/grievances/' + id); $('mBody'); openGrievance(id); loadGrievances(); };
+            $('gsApply').onclick = async () => { if (!$('gsStatus').value) return; await api(`/grievances/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: $('gsStatus').value, comment: $('gsComment').value || undefined, resolution: $('gsStatus').value === 'RESOLVED' ? ($('gsComment').value || undefined) : undefined }) }); reload(); };
+            $('gsDoAssign').onclick = async () => { if (!$('gsAssign').value) return; await api(`/grievances/${id}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: Number($('gsAssign').value) }) }); reload(); };
+            $('gsDoEsc').onclick = async () => { if (!$('gsTier').value) return; await api(`/grievances/${id}/escalate`, { method: 'PATCH', body: JSON.stringify({ toTier: $('gsTier').value, reason: $('gsComment').value || undefined }) }); reload(); };
+            $('gsComm').onclick = async () => { if (!$('gsComment').value.trim()) return; await api(`/grievances/${id}/comments`, { method: 'POST', body: JSON.stringify({ comment: $('gsComment').value.trim() }) }); reload(); };
+        }
+
+        // ---------- FEEDBACK ----------
+        async function loadFeedback() {
+            const el = $('p-feedback'); el.innerHTML = '<p class="muted">Loading…</p>';
+            const [{ data: a }, { data: list }] = await Promise.all([api('/feedback/analytics'), api('/feedback?limit=100')]);
+            el.innerHTML = `
+                <div class="stat-grid">
+                    <div class="stat"><div class="num">${a.totals.count || 0}</div><div class="lbl">Responses</div></div>
+                    <div class="stat amber"><div class="num">${a.totals.avgOverall ?? '—'}</div><div class="lbl">Avg overall</div></div>
+                    <div class="stat"><div class="num">${a.totals.avgStaff ?? '—'}</div><div class="lbl">Staff</div></div>
+                    <div class="stat"><div class="num">${a.totals.avgCleanliness ?? '—'}</div><div class="lbl">Cleanliness</div></div>
+                    <div class="stat"><div class="num">${a.totals.avgWaiting ?? '—'}</div><div class="lbl">Waiting</div></div>
+                    <div class="stat ok"><div class="num">${a.totals.pctRecommend ?? '—'}%</div><div class="lbl">Recommend</div></div>
+                </div>
+                <div class="card"><h2 style="font-size:15px">By department</h2>
+                    <table><thead><tr><th>Department</th><th>Responses</th><th>Avg overall</th></tr></thead><tbody>${a.byDepartment.map(d => `<tr><td>${esc(d.department)}</td><td>${d.count}</td><td>${pill(d.avgOverall >= 4 ? 'MEDIUM' : d.avgOverall >= 3 ? 'HIGH' : 'CRITICAL', (d.avgOverall ?? '—') + ' ★')}</td></tr>`).join('')}</tbody></table></div>
+                <div class="card"><h2 style="font-size:15px">Recent feedback</h2>
+                    <table><thead><tr><th>Ref</th><th>Dept</th><th>Overall</th><th>Comment</th><th>Follow-up</th></tr></thead><tbody>${
+                    list.map(f => `<tr><td>${esc(f.refNo)}</td><td>${esc(f.department || '—')}</td><td>${pill(f.ratingOverall >= 4 ? 'MEDIUM' : f.ratingOverall >= 3 ? 'HIGH' : 'CRITICAL', f.ratingOverall + '/5')}</td><td>${esc((f.comment || '').slice(0, 60))}</td><td class="muted">${f.linkedGrievanceId ? '⚑ grievance #' + f.linkedGrievanceId : '—'}</td></tr>`).join('')
+                    }</tbody></table></div>`;
+        }
+
+        // ---------- TICKETS ----------
+        async function loadTickets() {
+            const el = $('p-tickets');
+            el.innerHTML = `<div class="toolbar">
+                <input class="grow" id="tq" placeholder="Search…"/>
+                <select id="tStatus"><option value="">All statuses</option>${['OPEN','ASSIGNED','IN_PROGRESS','PENDING','RESOLVED','CLOSED'].map(s => `<option>${s}</option>`).join('')}</select>
+                <select id="tCat"><option value="">All categories</option>${['IT','BIOMEDICAL','FACILITY','HOUSEKEEPING','SUPPLY','OTHER'].map(s => `<option>${s}</option>`).join('')}</select>
+                <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="tMine" style="width:auto"> Mine</label>
+                <button id="tNew">+ New ticket</button><button class="ghost" id="tRefresh">Refresh</button></div><div id="tList"><p class="muted">Loading…</p></div>`;
+            const run = async () => {
+                const p = new URLSearchParams({ limit: '100' });
+                if ($('tq').value.trim()) p.set('search', $('tq').value.trim());
+                if ($('tStatus').value) p.set('status', $('tStatus').value);
+                if ($('tCat').value) p.set('category', $('tCat').value);
+                if ($('tMine').checked) p.set('assignedStaffId', 'me');
+                const r = await api('/tickets?' + p);
+                $('tList').innerHTML = r.data.length ? `<table><thead><tr><th>Ref</th><th>Subject</th><th>Category</th><th>Priority</th><th>Status</th><th>Assignee</th></tr></thead><tbody>${
+                    r.data.map(t => `<tr data-id="${t.id}"><td><strong>${esc(t.refNo)}</strong></td><td>${esc(t.subject)}</td><td class="muted">${esc(t.category || '—')}</td><td>${pill(t.priority, t.priority)}</td><td>${pill('status', t.status)}</td><td class="muted">${esc(t.assignedStaffName || '—')}</td></tr>`).join('')
+                }</tbody></table>` : '<p class="muted">No tickets.</p>';
+                $('tList').querySelectorAll('tbody tr').forEach(tr => tr.addEventListener('click', () => openTicket(tr.dataset.id)));
+            };
+            $('tRefresh').onclick = run; ['tStatus', 'tCat', 'tMine'].forEach(id => $(id).onchange = run); $('tq').onkeydown = e => { if (e.key === 'Enter') run(); };
+            $('tNew').onclick = newTicket; run();
+        }
+        function newTicket() {
+            $('modal').classList.add('open'); $('mRef').textContent = 'New ticket';
+            $('mBody').innerHTML = `<label>Subject *</label><input id="ntSub" placeholder="e.g. Ventilator alarm in ICU"/>
+                <label>Details *</label><textarea id="ntBody" placeholder="Describe the issue…"></textarea>
+                <div class="row"><div><label>Category</label><select id="ntCat"><option value="">Auto</option>${['IT', 'BIOMEDICAL', 'FACILITY', 'HOUSEKEEPING', 'SUPPLY', 'OTHER'].map(s => `<option>${s}</option>`).join('')}</select></div>
+                <div><label>Priority</label><select id="ntPrio"><option value="">Default</option>${['LOW', 'MEDIUM', 'HIGH', 'URGENT'].map(s => `<option>${s}</option>`).join('')}</select></div></div>
+                <div class="btn-row"><button id="ntCreate">Create & auto-route</button></div><div id="ntNotice"></div>`;
+            $('ntCreate').onclick = async () => {
+                const sub = $('ntSub').value.trim(), body = $('ntBody').value.trim();
+                if (sub.length < 3 || body.length < 3) { $('ntNotice').innerHTML = '<div class="notice err">Add a subject and details.</div>'; return; }
+                const r = await api('/tickets', { method: 'POST', body: JSON.stringify({ subject: sub, body, category: $('ntCat').value || undefined, priority: $('ntPrio').value || undefined }) });
+                openTicket(r.data.ticket.id); loadTickets();
+            };
+        }
+        async function openTicket(id) {
+            $('modal').classList.add('open'); $('mBody').innerHTML = '<p class="muted">Loading…</p>';
+            const { data: t } = await api('/tickets/' + id); $('mRef').textContent = t.refNo;
+            const rec = t.recommendation || {}; const ra = rec.recommended;
+            const sims = (rec.similar || []).map(s => `<div class="simitem"><strong>${esc(s.refNo || '')}</strong> ${esc(s.subject)} ${s.staffName ? '· <span class="muted">' + esc(s.staffName) + '</span>' : ''} ${pill('status', s.status)}<div class="muted">${(s.score * 100).toFixed(0)}% match${s.resolution ? ' · ' + esc(s.resolution.slice(0, 70)) + '…' : ''}</div><div class="bar"><span style="width:${Math.min(100, s.score * 100)}%"></span></div></div>`).join('') || '<p class="muted">No similar tickets.</p>';
+            const opts = staff.filter(s => s.role !== undefined).map(s => `<option value="${s.id}" ${s.id === t.assignedStaffId ? 'selected' : ''}>${esc(s.name)}${s.department ? ' — ' + esc(s.department) : ''}</option>`).join('');
+            $('mBody').innerHTML = `<div class="grid2">
+                <div>
+                    <div style="margin-bottom:8px">${pill(t.priority, t.priority)} ${pill('status', t.status)} ${t.category ? pill('MEDIUM', t.category) : ''}</div>
+                    <div class="kv"><div class="k">Subject</div><div>${esc(t.subject)}</div><div class="k">Details</div><div>${esc(t.body)}</div><div class="k">Assignee</div><div>${esc(t.assignedStaffName || 'Unassigned')}</div></div>
+                    <h3 style="margin-top:12px;font-size:14px;color:var(--navy)">Conversation</h3>${(t.messages || []).map(m => `<div class="msg ${m.direction}"><div class="meta">${m.direction}${m.isInternal ? ' · internal' : ''} · ${esc(m.authorName || '')} · ${dt(m.createdAt)}</div>${esc(m.body)}</div>`).join('') || '<p class="muted">No messages.</p>'}
+                    <label>Reply / note</label><textarea id="tsReply" style="min-height:60px"></textarea>
+                    <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="tsInternal" style="width:auto"> Internal note</label>
+                    <div class="btn-row"><button class="ghost" id="tsSend">Save</button></div>
+                </div>
+                <div>
+                    <div class="reco"><h3>🧭 Recommended</h3>${ra ? `<strong>${esc(ra.staffName)}</strong> <span class="muted">(${esc(rec.source)})</span><div class="muted">${esc(ra.reason)}</div><div class="btn-row"><button id="tsRec">Assign to ${esc(ra.staffName)}</button></div>` : '<span class="muted">No recommendation.</span>'}</div>
+                    <div class="reco"><h3>🔎 Similar tickets</h3>${sims}</div>
+                    <label>Assign to</label><select id="tsAssign">${opts}</select>
+                    <div class="btn-row"><button class="ghost" id="tsDoAssign">Assign</button><button class="ghost" id="tsMine">Assign to me</button></div>
+                    <label style="margin-top:10px">Status</label><select id="tsStatus">${['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED', 'REOPENED'].map(s => `<option ${s === t.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
+                    <label>Resolution</label><textarea id="tsResolution" style="min-height:50px">${esc(t.resolution || '')}</textarea>
+                    <div class="btn-row"><button class="ghost" id="tsDoStatus">Update status</button></div>
+                </div></div>`;
+            const reload = () => { openTicket(id); loadTickets(); };
+            const rb = $('tsRec'); if (rb) rb.onclick = async () => { await api(`/tickets/${id}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: ra.staffId }) }); reload(); };
+            $('tsDoAssign').onclick = async () => { await api(`/tickets/${id}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: Number($('tsAssign').value) }) }); reload(); };
+            $('tsMine').onclick = async () => { await api(`/tickets/${id}/assign-to-me`, { method: 'POST' }); reload(); };
+            $('tsDoStatus').onclick = async () => { await api(`/tickets/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: $('tsStatus').value, resolution: $('tsResolution').value || undefined }) }); reload(); };
+            $('tsSend').onclick = async () => { if (!$('tsReply').value.trim()) return; await api(`/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify({ body: $('tsReply').value.trim(), isInternal: $('tsInternal').checked }) }); reload(); };
+        }
+
+        $('mClose').addEventListener('click', () => $('modal').classList.remove('open'));
+        $('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').classList.remove('open'); });
+        if (token && me) boot();
+    </script>
+</body>
+</html>
