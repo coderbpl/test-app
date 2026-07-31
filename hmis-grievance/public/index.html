@@ -28,28 +28,23 @@
         <!-- GRIEVANCE -->
         <section id="tab-grievance">
             <div class="card">
-                <div class="sub">Your complaint will be sent to the right officer for action.</div>
+                <div class="sub">Your issue is logged as a ticket and routed to the right team to resolve.</div>
                 <div id="gNotice"></div>
                 <form id="gForm">
-                    <label>Hospital <span class="hin opt">· अस्पताल</span></label>
-                    <select id="gHosp"><option value="">Select hospital / अस्पताल चुनें</option></select>
-                    <label>Category <span class="hin opt">· श्रेणी</span></label>
-                    <select id="gCat"><option value="">Select / चुनें</option></select>
+                    <label>Hospital <span class="opt">(optional)</span> <span class="hin opt">· अस्पताल</span></label>
+                    <select id="gHosp"><option value="">Select / चुनें</option></select>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 5px">
-                        <label style="margin:0">Describe your complaint <span class="hin opt">· विवरण</span> *</label>
+                        <label style="margin:0">Describe your issue <span class="hin opt">· विवरण</span> *</label>
                         <button type="button" class="btn ghost" id="gRewrite" style="padding:6px 12px;font-size:13px">✨ Rewrite with AI</button>
                     </div>
-                    <textarea id="gDesc" maxlength="2000" required placeholder="e.g. दवाई नहीं मिली और 3 घंटे इंतजार करना पड़ा…"></textarea>
+                    <textarea id="gDesc" maxlength="2000" required placeholder="e.g. HMIS ऐप लॉगिन पर बार-बार क्रैश हो रहा है…"></textarea>
                     <div class="help" style="text-align:right"><span id="gCount">0</span>/2000</div>
-                    <div class="row">
-                        <div><label>Department <span class="opt">(optional)</span></label><input id="gDept" placeholder="OPD / Pharmacy / Lab…" /></div>
-                    </div>
-                    <label style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="gAnon" style="width:auto"> File anonymously <span class="hin opt">· गुमनाम</span></label>
+                    <label style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="gAnon" style="width:auto"> Submit anonymously <span class="hin opt">· गुमनाम</span></label>
                     <div id="gContact" class="row">
                         <div><label>Your name</label><input id="gName" /></div>
                         <div><label>Mobile</label><input id="gMobile" /></div>
                     </div>
-                    <div class="btn-row"><button type="submit" id="gSubmit">Submit grievance <span class="hin">· दर्ज करें</span></button></div>
+                    <div class="btn-row"><button type="submit" id="gSubmit">Submit <span class="hin">· दर्ज करें</span></button></div>
                 </form>
             </div>
             <div class="card hidden" id="gOk">
@@ -70,11 +65,9 @@
                 <div class="row">
                     <div><label>Feedback about <span class="hin opt">· विषय</span></label>
                         <select id="fType"><option value="SERVICE">🏥 Hospital service</option><option value="APP">📱 HMIS app</option></select></div>
-                    <div><label>Hospital <span class="hin opt">· अस्पताल</span></label>
+                    <div id="fHospWrap"><label>Hospital <span class="hin opt">· अस्पताल</span></label>
                         <select id="fHosp"><option value="">Select / चुनें</option></select></div>
                 </div>
-                <div id="fDeptWrap"><label>Department <span class="opt">(optional)</span></label>
-                    <input id="fDept" placeholder="OPD / Pharmacy / Emergency…" /></div>
 
                 <div style="margin-top:12px">
                     <div class="rate-row"><span class="lbl">Overall <span class="hin opt">· कुल</span> *</span><div class="stars" data-key="overall"></div></div>
@@ -102,8 +95,8 @@
         <section id="tab-track" class="hidden">
             <div class="card">
                 <h2>Track a grievance <span class="hin" style="font-weight:600">· स्थिति देखें</span></h2>
-                <div class="sub">Enter your tracking number (e.g. GRV-2026-000123).</div>
-                <div class="row"><input id="tRef" placeholder="GRV-2026-000123" /><button id="tBtn" style="flex:0 0 auto">Check / देखें</button></div>
+                <div class="sub">Enter your tracking number (e.g. TKT-2026-000123).</div>
+                <div class="row"><input id="tRef" placeholder="TKT-2026-000123" /><button id="tBtn" style="flex:0 0 auto">Check / देखें</button></div>
                 <div id="tResult"></div>
             </div>
         </section>
@@ -119,9 +112,6 @@
             ['grievance', 'feedback', 'track'].forEach(n => $('tab-' + n).classList.toggle('hidden', n !== t.dataset.tab));
         }));
 
-        // Categories
-        api('/grievances/categories').then(r => { const s = $('gCat'); r.data.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = `${c.name} · ${c.nameHi || ''}`; s.appendChild(o); }); }).catch(() => {});
-
         // Hospitals (both grievance + feedback dropdowns)
         api('/hospitals').then(r => { ['gHosp', 'fHosp'].forEach(id => r.data.forEach(h => { const o = document.createElement('option'); o.value = h.id; o.textContent = `${h.name}${h.district ? ' · ' + h.district : ''}`; $(id).appendChild(o); })); }).catch(() => {});
 
@@ -135,7 +125,7 @@
             if (text.length < 3) { $('gNotice').innerHTML = '<div class="notice info">Write a few words first, then let AI polish it.</div>'; return; }
             const b = $('gRewrite'); const orig = b.innerHTML; b.disabled = true; b.textContent = 'Rewriting…'; $('gNotice').innerHTML = '';
             try {
-                const r = await api('/grievances/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+                const r = await api('/tickets/rewrite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
                 if (r.data.aiAvailable && r.data.rewritten) { $('gDesc').value = r.data.rewritten.slice(0, 2000); gCount(); $('gNotice').innerHTML = '<div class="notice ok">Description rewritten by AI.</div>'; }
                 else { $('gNotice').innerHTML = `<div class="notice info">${r.message} — kept your text.</div>`; }
             } catch (e) { $('gNotice').innerHTML = `<div class="notice err">${e.message}</div>`; }
@@ -145,15 +135,15 @@
         // Anonymous toggle
         $('gAnon').addEventListener('change', e => $('gContact').classList.toggle('hidden', e.target.checked));
 
-        // Grievance submit
+        // Grievance submit → creates a ticket (routed to the right team)
         $('gForm').addEventListener('submit', async e => {
             e.preventDefault();
-            const p = { description: $('gDesc').value.trim(), isAnonymous: $('gAnon').checked, department: $('gDept').value.trim() || undefined, categoryId: $('gCat').value ? Number($('gCat').value) : undefined, hospitalId: $('gHosp').value ? Number($('gHosp').value) : undefined };
-            if (!$('gAnon').checked) { p.complainantName = $('gName').value.trim() || undefined; p.complainantMobile = $('gMobile').value.trim() || undefined; }
+            const p = { description: $('gDesc').value.trim(), isAnonymous: $('gAnon').checked, hospitalId: $('gHosp').value ? Number($('gHosp').value) : undefined };
+            if (!$('gAnon').checked) { p.requesterName = $('gName').value.trim() || undefined; p.requesterMobile = $('gMobile').value.trim() || undefined; }
             const b = $('gSubmit'); b.disabled = true; b.textContent = 'Submitting…'; $('gNotice').innerHTML = '';
-            try { const r = await api('/grievances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+            try { const r = await api('/tickets/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
                 $('gForm').classList.add('hidden'); $('gRef').textContent = r.data.refNo; $('gOk').classList.remove('hidden');
-            } catch (err) { $('gNotice').innerHTML = `<div class="notice err">${err.message}</div>`; b.disabled = false; b.textContent = 'Submit grievance'; }
+            } catch (err) { $('gNotice').innerHTML = `<div class="notice err">${err.message}</div>`; b.disabled = false; b.textContent = 'Submit'; }
         });
 
         // Feedback type (single dropdown) — show only the relevant fields, keep the form short.
@@ -162,7 +152,7 @@
             feedbackType = t;
             $('svcRates').classList.toggle('hidden', t !== 'SERVICE');
             $('appRates').classList.toggle('hidden', t !== 'APP');
-            $('fDeptWrap').classList.toggle('hidden', t !== 'SERVICE');
+            $('fHospWrap').classList.toggle('hidden', t === 'APP'); // hospital not relevant for app feedback
             $('fRecWrap').classList.toggle('hidden', t !== 'SERVICE');
         }
         $('fType').addEventListener('change', e => setType(e.target.value));
@@ -181,8 +171,7 @@
 
         $('fSubmit').addEventListener('click', async () => {
             if (!ratings.overall) { $('fNotice').innerHTML = '<div class="notice err">Please give an overall rating.</div>'; return; }
-            const p = { feedbackType, hospitalId: $('fHosp').value ? Number($('fHosp').value) : undefined,
-                department: feedbackType === 'SERVICE' ? ($('fDept').value.trim() || undefined) : undefined,
+            const p = { feedbackType, hospitalId: (feedbackType === 'SERVICE' && $('fHosp').value) ? Number($('fHosp').value) : undefined,
                 ratingOverall: ratings.overall,
                 ratingStaff: ratings.staff || undefined, ratingCleanliness: ratings.cleanliness || undefined, ratingWaiting: ratings.waiting || undefined,
                 ratingEase: ratings.ease || undefined, ratingSpeed: ratings.speed || undefined,
@@ -197,11 +186,11 @@
         $('tBtn').addEventListener('click', async () => {
             const ref = $('tRef').value.trim(); if (!ref) return;
             $('tResult').innerHTML = '<p class="muted">Looking up…</p>';
-            try { const r = await api('/grievances/track/' + encodeURIComponent(ref)); const g = r.data;
+            try { const r = await api('/tickets/track/' + encodeURIComponent(ref)); const g = r.data;
                 $('tResult').innerHTML = `<div class="notice info" style="margin-top:16px"><span class="ref">${esc(g.refNo)}</span> &nbsp;
-                    <span class="pill status">${g.status}</span> <span class="pill ${g.priority}">${g.priority}</span> ${g.categoryName ? '· ' + esc(g.categoryName) : ''}
+                    <span class="pill status">${g.status}</span> <span class="pill ${g.priority}">${g.priority}</span>
                     <div class="meta" style="margin-top:5px">Filed ${new Date(g.createdAt).toLocaleString()}</div></div>
-                    <ul class="timeline">${g.timeline.map(t => `<li><strong>${esc(t.eventType.replace(/_/g, ' '))}</strong>${t.toStatus ? ' → ' + esc(t.toStatus) : ''}<div>${esc(t.comment || '')}</div><div class="meta">${esc(t.actorName || '')} · ${new Date(t.createdAt).toLocaleString()}</div></li>`).join('')}</ul>`;
+                    <ul class="timeline">${g.timeline.map(t => `<li><strong>${esc(t.eventType.replace(/_/g, ' '))}</strong><div>${esc(t.detail || '')}</div><div class="meta">${new Date(t.createdAt).toLocaleString()}</div></li>`).join('')}</ul>`;
             } catch (err) { $('tResult').innerHTML = `<div class="notice err">${err.message}</div>`; }
         });
     </script>

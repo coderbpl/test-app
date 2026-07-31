@@ -27,7 +27,6 @@
             <div class="head"><div class="crest">⚕️</div><div class="t">MP HMIS<br><span style="font-weight:400;opacity:.7;font-size:11px">Grievance Cell</span></div></div>
             <nav>
                 <button class="navitem active" data-p="dashboard"><span class="ic">▩</span><span>Dashboard<span class="hin">डैशबोर्ड</span></span></button>
-                <button class="navitem" data-p="grievances"><span class="ic">⚑</span><span>Grievances<span class="hin">शिकायतें</span></span></button>
                 <button class="navitem" data-p="feedback"><span class="ic">★</span><span>Feedback<span class="hin">प्रतिक्रिया</span></span></button>
                 <button class="navitem" data-p="tickets"><span class="ic">🛠</span><span>Tickets<span class="hin">टिकट</span></span></button>
                 <button class="navitem" data-p="team"><span class="ic">👥</span><span>Team<span class="hin">टीम</span></span></button>
@@ -43,7 +42,6 @@
             </div>
             <div class="content">
                 <div class="panel active" id="p-dashboard"></div>
-                <div class="panel" id="p-grievances"></div>
                 <div class="panel" id="p-feedback"></div>
                 <div class="panel" id="p-tickets"></div>
                 <div class="panel" id="p-team"></div>
@@ -57,7 +55,7 @@
         let token = localStorage.getItem('hg_token'), me = JSON.parse(localStorage.getItem('hg_me') || 'null'), staff = [], hospitals = [], team = [];
         const hospOptions = (sel) => `<option value="">All hospitals</option>${hospitals.map(h => `<option value="${h.id}" ${String(sel) === String(h.id) ? 'selected' : ''}>${h.name}</option>`).join('')}`;
         const api = (p, o = {}) => fetch('/api' + p, { ...o, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(o.headers || {}) } })
-            .then(async r => { const b = await r.json().catch(() => ({})); if (r.status === 401) { logout(); throw new Error('Session expired'); } if (!r.ok) throw new Error(b.error || 'Failed'); return b; });
+            .then(async r => { const b = await r.json().catch(() => ({})); if (r.status === 401 && token) { logout(); throw new Error('Session expired — please log in again'); } if (!r.ok) throw new Error(b.error || 'Failed'); return b; });
         const $ = id => document.getElementById(id);
         const esc = s => s == null ? '' : String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
         const pill = (c, t) => `<span class="pill ${c}">${t}</span>`;
@@ -79,100 +77,37 @@
             try { hospitals = (await api('/hospitals')).data; } catch {}
             show('dashboard');
         }
-        const TITLES = { dashboard: 'Dashboard', grievances: 'Grievances', feedback: 'Feedback', tickets: 'Tickets', team: 'Team' };
+        const TITLES = { dashboard: 'Dashboard', feedback: 'Feedback', tickets: 'Tickets', team: 'Team' };
         document.querySelectorAll('.navitem').forEach(n => n.addEventListener('click', () => show(n.dataset.p)));
         function show(p) {
             document.querySelectorAll('.navitem').forEach(n => n.classList.toggle('active', n.dataset.p === p));
             document.querySelectorAll('.panel').forEach(x => x.classList.toggle('active', x.id === 'p-' + p));
             $('panelTitle').textContent = TITLES[p];
-            ({ dashboard: loadDashboard, grievances: loadGrievances, feedback: loadFeedback, tickets: loadTickets, team: loadTeam }[p])();
+            ({ dashboard: loadDashboard, feedback: loadFeedback, tickets: loadTickets, team: loadTeam }[p])();
         }
 
         // ---------- DASHBOARD ----------
         async function loadDashboard() {
             const el = $('p-dashboard'); el.innerHTML = '<p class="muted">Loading…</p>';
             const { data: d } = await api('/dashboard');
+            const cat = (d.tickets.byCategory || []).map(c => `${c.category}: ${c.count}`).join(' · ');
             el.innerHTML = `
-                <h3 style="margin:4px 0 10px;color:var(--navy)">⚑ Grievances</h3>
+                <h3 style="margin:4px 0 10px;color:var(--navy)">🛠 Tickets <span class="muted" style="font-weight:400;font-size:13px">(includes grievances from the public)</span></h3>
                 <div class="stat-grid">
-                    <div class="stat"><div class="num">${d.grievances.total || 0}</div><div class="lbl">Total</div></div>
-                    <div class="stat"><div class="num">${d.grievances.open || 0}</div><div class="lbl">Open</div></div>
-                    <div class="stat alert"><div class="num">${d.grievances.urgentOpen || 0}</div><div class="lbl">Urgent open</div></div>
-                    <div class="stat ok"><div class="num">${d.grievances.resolved || 0}</div><div class="lbl">Resolved</div></div>
+                    <div class="stat"><div class="num">${d.tickets.total || 0}</div><div class="lbl">Total</div></div>
+                    <div class="stat"><div class="num">${d.tickets.open || 0}</div><div class="lbl">Open</div></div>
+                    <div class="stat alert"><div class="num">${d.tickets.urgentOpen || 0}</div><div class="lbl">Urgent open</div></div>
+                    <div class="stat ok"><div class="num">${d.tickets.resolved || 0}</div><div class="lbl">Resolved</div></div>
+                    <div class="stat"><div class="num">${d.tickets.fromPublic || 0}</div><div class="lbl">From public</div></div>
                 </div>
-                <h3 style="margin:14px 0 10px;color:var(--navy)">★ Feedback</h3>
+                ${cat ? `<div class="help" style="margin-top:6px">By category — ${esc(cat)}</div>` : ''}
+                <h3 style="margin:16px 0 10px;color:var(--navy)">★ Feedback</h3>
                 <div class="stat-grid">
                     <div class="stat"><div class="num">${d.feedback.count || 0}</div><div class="lbl">Responses</div></div>
                     <div class="stat amber"><div class="num">${d.feedback.avgOverall ?? '—'}</div><div class="lbl">Avg rating /5</div></div>
                     <div class="stat ok"><div class="num">${d.feedback.pctRecommend ?? '—'}%</div><div class="lbl">Would recommend</div></div>
                     <div class="stat alert"><div class="num">${d.feedback.lowRatings || 0}</div><div class="lbl">Low ratings (≤2)</div></div>
-                </div>
-                <h3 style="margin:14px 0 10px;color:var(--navy)">🛠 Tickets</h3>
-                <div class="stat-grid">
-                    <div class="stat"><div class="num">${d.tickets.total || 0}</div><div class="lbl">Total</div></div>
-                    <div class="stat"><div class="num">${d.tickets.open || 0}</div><div class="lbl">Open</div></div>
-                    <div class="stat ok"><div class="num">${d.tickets.resolved || 0}</div><div class="lbl">Resolved</div></div>
                 </div>`;
-        }
-
-        // ---------- GRIEVANCES ----------
-        async function loadGrievances() {
-            const el = $('p-grievances');
-            el.innerHTML = `<div class="toolbar">
-                <input class="grow" id="gq" placeholder="Search…"/>
-                <select id="gStatus"><option value="">All statuses</option>${['NEW','ACKNOWLEDGED','IN_PROGRESS','RESOLVED','CLOSED','REOPENED'].map(s => `<option>${s}</option>`).join('')}</select>
-                <select id="gPrio"><option value="">All priorities</option>${['CRITICAL','HIGH','MEDIUM','LOW'].map(s => `<option>${s}</option>`).join('')}</select>
-                <select id="gHospF">${hospOptions()}</select>
-                <button class="ghost" id="gRefresh">Refresh</button></div><div id="gList"><p class="muted">Loading…</p></div>`;
-            const run = async () => {
-                const p = new URLSearchParams({ limit: '100' });
-                if ($('gq').value.trim()) p.set('search', $('gq').value.trim());
-                if ($('gStatus').value) p.set('status', $('gStatus').value);
-                if ($('gPrio').value) p.set('priority', $('gPrio').value);
-                if ($('gHospF').value) p.set('hospitalId', $('gHospF').value);
-                const r = await api('/grievances?' + p);
-                $('gList').innerHTML = r.data.length ? `<table><thead><tr><th>Ref</th><th>Subject</th><th>Priority</th><th>Status</th><th>Owner tier</th></tr></thead><tbody>${
-                    r.data.map(g => `<tr data-id="${g.id}"><td><strong>${esc(g.refNo)}</strong><div class="muted" style="font-size:12px">${esc(g.categoryName || '—')}${g.hospitalName ? ' · ' + esc(g.hospitalName) : ''}</div></td>
-                    <td>${esc((g.subject || g.description).slice(0, 60))}</td><td>${pill(g.priority, g.priority)}</td><td>${pill('status', g.status)}</td><td class="muted">${esc(g.currentOwnerTier)}</td></tr>`).join('')
-                }</tbody></table>` : '<p class="muted">No grievances.</p>';
-                $('gList').querySelectorAll('tbody tr').forEach(tr => tr.addEventListener('click', () => openGrievance(tr.dataset.id)));
-            };
-            $('gRefresh').onclick = run; ['gStatus', 'gPrio', 'gHospF'].forEach(id => $(id).onchange = run); $('gq').onkeydown = e => { if (e.key === 'Enter') run(); };
-            run();
-        }
-        async function openGrievance(id) {
-            $('modal').classList.add('open'); $('mBody').innerHTML = '<p class="muted">Loading…</p>';
-            const { data: g } = await api('/grievances/' + id); $('mRef').textContent = g.refNo;
-            const opts = staff.map(s => `<option value="${s.id}">${esc(s.name)}${s.department ? ' — ' + esc(s.department) : ''}</option>`).join('');
-            $('mBody').innerHTML = `
-                <div style="margin-bottom:8px">${pill(g.priority, g.priority)} ${pill('status', g.status)} ${g.isUrgent ? pill('urgent', 'URGENT') : ''}</div>
-                <div class="kv">
-                    <div class="k">Category</div><div>${esc(g.categoryName || '—')} ${g.categoryNameHi ? '<span class="hin muted">· ' + esc(g.categoryNameHi) + '</span>' : ''}</div>
-                    <div class="k">Complaint</div><div>${esc(g.description)}</div>
-                    <div class="k">Department</div><div>${esc(g.department || '—')}</div>
-                    <div class="k">Complainant</div><div>${g.isAnonymous ? 'Anonymous' : esc(g.complainantName || '—') + (g.complainantMobile ? ' · ' + esc(g.complainantMobile) : '')}</div>
-                    <div class="k">Owner tier</div><div>${esc(g.currentOwnerTier)}${g.assignedStaffName ? ' · ' + esc(g.assignedStaffName) : ''}</div>
-                    ${g.linkedTicketRef ? `<div class="k">Work ticket</div><div><strong>${esc(g.linkedTicketRef)}</strong> ${g.linkedTicketStatus ? pill('status', g.linkedTicketStatus) : ''} — ${g.linkedTicketAssignee ? 'assigned to ' + esc(g.linkedTicketAssignee) : 'unassigned'}</div>` : ''}
-                </div>
-                <div class="row" style="margin-top:12px">
-                    <select id="gsStatus"><option value="">Change status…</option>${['ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'].map(s => `<option>${s}</option>`).join('')}</select>
-                    <select id="gsAssign"><option value="">Assign to…</option>${opts}</select>
-                    <select id="gsTier"><option value="">Escalate to…</option>${['DISTRICT', 'DIVISION', 'STATE'].map(s => `<option>${s}</option>`).join('')}</select>
-                </div>
-                <textarea id="gsComment" placeholder="Comment / resolution note…" style="margin-top:10px;min-height:64px"></textarea>
-                <div class="btn-row">
-                    <button class="ghost" id="gsApply">Apply status</button>
-                    <button class="ghost" id="gsDoAssign">Assign</button>
-                    <button class="ghost" id="gsDoEsc">Escalate</button>
-                    <button class="ghost" id="gsComm">Add comment</button>
-                </div>
-                <h3 style="margin-top:16px;font-size:14px;color:var(--navy)">Timeline</h3>
-                <ul class="timeline">${g.timeline.map(t => `<li><strong>${esc(t.eventType.replace(/_/g, ' '))}</strong>${t.toStatus ? ' → ' + esc(t.toStatus) : ''}${t.isInternal ? ' ' + pill('breach', 'internal') : ''}<div>${esc(t.comment || '')}</div><div class="meta">${esc(t.actorName || '')} · ${dt(t.createdAt)}</div></li>`).join('')}</ul>`;
-            const reload = async () => { const { data } = await api('/grievances/' + id); $('mBody'); openGrievance(id); loadGrievances(); };
-            $('gsApply').onclick = async () => { if (!$('gsStatus').value) return; await api(`/grievances/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: $('gsStatus').value, comment: $('gsComment').value || undefined, resolution: $('gsStatus').value === 'RESOLVED' ? ($('gsComment').value || undefined) : undefined }) }); reload(); };
-            $('gsDoAssign').onclick = async () => { if (!$('gsAssign').value) return; await api(`/grievances/${id}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: Number($('gsAssign').value) }) }); reload(); };
-            $('gsDoEsc').onclick = async () => { if (!$('gsTier').value) return; await api(`/grievances/${id}/escalate`, { method: 'PATCH', body: JSON.stringify({ toTier: $('gsTier').value, reason: $('gsComment').value || undefined }) }); reload(); };
-            $('gsComm').onclick = async () => { if (!$('gsComment').value.trim()) return; await api(`/grievances/${id}/comments`, { method: 'POST', body: JSON.stringify({ comment: $('gsComment').value.trim() }) }); reload(); };
         }
 
         // ---------- FEEDBACK ----------
@@ -257,7 +192,10 @@
             $('mBody').innerHTML = `<div class="grid2">
                 <div>
                     <div style="margin-bottom:8px">${pill(t.priority, t.priority)} ${pill('status', t.status)} ${t.category ? pill('MEDIUM', t.category) : ''}</div>
-                    <div class="kv"><div class="k">Subject</div><div>${esc(t.subject)}</div><div class="k">Details</div><div>${esc(t.body)}</div><div class="k">Assignee</div><div>${esc(t.assignedStaffName || 'Unassigned')}</div></div>
+                    <div class="kv"><div class="k">Subject</div><div>${esc(t.subject)}</div><div class="k">Details</div><div>${esc(t.body)}</div>
+                        <div class="k">Source</div><div>${esc(t.source || 'STAFF')}${t.hospitalName ? ' · ' + esc(t.hospitalName) : ''}</div>
+                        ${t.source === 'WEB' ? `<div class="k">Reporter</div><div>${t.isAnonymous ? 'Anonymous' : (esc(t.requesterName || '—') + (t.requesterMobile ? ' · ' + esc(t.requesterMobile) : '') + (t.requesterEmail ? ' · ' + esc(t.requesterEmail) : ''))}</div>` : ''}
+                        <div class="k">Assignee</div><div>${esc(t.assignedStaffName || 'Unassigned')}</div></div>
                     <h3 style="margin-top:12px;font-size:14px;color:var(--navy)">Conversation</h3>${(t.messages || []).map(m => `<div class="msg ${m.direction}"><div class="meta">${m.direction}${m.isInternal ? ' · internal' : ''} · ${esc(m.authorName || '')} · ${dt(m.createdAt)}</div>${esc(m.body)}</div>`).join('') || '<p class="muted">No messages.</p>'}
                     <label>Reply / note</label><textarea id="tsReply" style="min-height:60px"></textarea>
                     <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="tsInternal" style="width:auto"> Internal note</label>

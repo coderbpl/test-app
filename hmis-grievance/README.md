@@ -4,20 +4,34 @@ A single, standalone system for a government hospital that unifies **three** thi
 staff actually need, in the **Madhya Pradesh HMIS design language** (navy/blue/amber, bilingual
 Hindi+English, fixed left tab-rail console):
 
-1. **Grievance handling** — patients file complaints (bilingual, anonymous option); each is
-   prioritized, tracked on a timeline, and assigned/escalated by an officer.
+1. **Grievance = Ticket (unified).** The public "grievance" form creates a **ticket** directly
+   (one record, tracked by `TKT-…`) — no separate grievance entity. Every issue is handled
+   ticket-based (not on phone calls).
 2. **Patient feedback** — a star-rating survey for either the **hospital service** or the **HMIS
-   app**, with department + type analytics. A poor **service** rating (≤2) auto-opens a linked
-   grievance; a poor **app** rating auto-raises a routed IT ticket — closed loops, not dead-end
-   surveys.
-3. **Internal ticketing** — handled by an **OIC → PM → TL → Developer** team. New tickets are
-   **auto-assigned to the right developer based on the description** (similar past tickets, then
-   skill tags), and the assignee is **notified by email**.
+   app** (Hospital field hidden for app feedback), with department + type analytics. Any poor
+   rating (≤2) **auto-raises a routed ticket** — a closed loop, not a dead-end survey.
+3. **Ticketing team** — an **OIC → PM → TL → Developer** hierarchy. Every ticket (public grievance,
+   feedback follow-up, or internal) is **auto-assigned to the right developer by its description**
+   (similar past tickets, then skill tags), the assignee is **emailed**, and a **Team view** shows
+   each member's load with one-click **reassignment**.
 
-Everything runs **locally, no cloud, no external AI** — the right default for patient data. The
-"smart" parts (description-based ticket routing, feedback→follow-up loops, analytics) need no API
-keys or model server. Optional add-ons: **email** notifications (configure SMTP in `.env`) and
-**"Rewrite with AI"** on grievances (local Ollama by default).
+Runs **locally, no cloud** — the right default for patient data. PII (names, mobiles, emails) is
+**encrypted in transit over HTTPS/TLS** when a cert is configured (see Security). The "smart"
+parts (routing, follow-up loops, analytics) need no API keys. Optional: **email** (SMTP) and
+**"Rewrite with AI"** (local Ollama by default).
+
+## Security — PII in transit (HTTPS)
+
+Set a key + cert to serve over TLS so PII isn't sent as plain text. For local dev:
+
+```bash
+mkdir -p certs && openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout certs/key.pem -out certs/cert.pem -days 365 -subj "/CN=localhost"
+# in .env:  SSL_KEY_FILE=./certs/key.pem   SSL_CERT_FILE=./certs/cert.pem
+```
+
+The server then boots on `https://…`. In production, terminate TLS at a load balancer / reverse
+proxy with a real certificate. Without a cert it runs HTTP (dev only) and warns on startup.
 
 > Design is original to this app (not copied from any template): it follows the HMIS palette
 > navy `#16357E` / blue `#2E6BE6` / amber `#F5A623`, bilingual labels, and the doctor-app
