@@ -37,16 +37,18 @@ npm start
 - **Patient site:** http://localhost:4200/ — file a grievance, give feedback, or track status
 - **Staff console:** http://localhost:4200/console.html — Dashboard · Grievances · Feedback · Tickets
 
-Seeded logins: `admin@mphmis.local` / your `ADMIN_PASSWORD`; staff
-`ramesh@` (IT), `kavita@` (biomedical), `suresh@` (facility), `meena@mphmis.local` (housekeeping) /
-`staff123`. Seeded with resolved sample tickets (routing history) and sample feedback (analytics).
+Seeded logins: `admin@mphmis.local` / your `ADMIN_PASSWORD`. Grievance officers `sunita@` / `anil@`.
+Ticket team (all `staff123`): `oic@` (OIC), `pm@` (PM), `tl.backend@` / `tl.frontend@` (Team Leads),
+and developers `vikram@` (backend/API), `neha@` (frontend/UI), `amit@` (database), `ravi@` (devops),
+`pooja@mphmis.local` (mobile). Seeded with resolved sample tickets (routing history) and feedback.
 
 ### Try the smart bits (no setup needed)
 
-- File a feedback of **1/5** → the console shows a **linked grievance** was auto-created.
-- Raise a ticket *"ICU patient monitor not showing readings"* → routes to **Kavita** (biomedical);
-  *"HMIS login not working"* → **Ramesh** (IT).
-- A grievance past its SLA is escalated a tier by the cron sweep (`npm run sla:sweep` to run once).
+- Raise a ticket *"API returns 500 when saving a record"* → auto-assigned to **Vikram** (backend);
+  *"dashboard layout broken, CSS overlaps"* → **Neha** (frontend); *"reports page query timeout"* →
+  **Amit** (database). The assignee is emailed (logged to the console when SMTP is off).
+- Submit **service** feedback of 1/5 → a **linked grievance** is auto-created; submit **HMIS app**
+  feedback of 1/5 → a routed **IT ticket** is auto-raised.
 
 ---
 
@@ -75,7 +77,7 @@ src/
   utils/        response/errors/pagination/refNo (index.js) + textSimilarity (routing engine)
   middlewares/  auth (JWT), validate (Joi), error
   modules/      auth · grievances · feedback · tickets · dashboard  (one cohesive file each)
-  jobs/         slaSweep (cron auto-escalation)
+                + ai.service (Rewrite with AI) · email.service (assignment notifications)
   routes/       API router + /health
 public/
   hmis.css      MP HMIS design system (navy/blue/amber, bilingual, left-rail)
@@ -87,6 +89,6 @@ public/
 
 Standalone by design (SQLite, own JWT). To fold into the main HMIS later, the data access is
 plain SQL in each module — swap for the HMIS `mssql` stored-procedure DAM and reuse its
-gateway auth/roles. The schema, workflows, SLA/escalation, feedback→grievance loop, and the
+gateway auth/roles. The schema, workflows, feedback→grievance / app→ticket loops, and the
 local routing engine all carry over. For scale, replace the brute-force cosine in
 `utils/textSimilarity.js` with a vector index; the routing service boundary stays the same.

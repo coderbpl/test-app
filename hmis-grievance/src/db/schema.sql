@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS grievances (
     current_owner_tier  TEXT    NOT NULL DEFAULT 'FACILITY'
         CHECK (current_owner_tier IN ('FACILITY','BLOCK','DISTRICT','DIVISION','STATE')),
     assigned_staff_id   INTEGER REFERENCES staff(id),
+    -- Every grievance is also formed into a work ticket, auto-routed to the right developer.
+    linked_ticket_id    INTEGER REFERENCES tickets(id),
     resolution          TEXT,
     resolved_at         TEXT,
     closed_at           TEXT,

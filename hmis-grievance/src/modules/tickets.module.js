@@ -7,7 +7,7 @@ import { tokenize, toVector, cosine } from '../utils/textSimilarity.js';
 import { sendMail } from './email.service.js';
 
 const nowIso = () => new Date().toISOString();
-const CATEGORY = ['BUG', 'FEATURE', 'API', 'DATABASE', 'UI_UX', 'DEPLOYMENT', 'OTHER'];
+const CATEGORY = ['BUG', 'FEATURE', 'API', 'DATABASE', 'UI_UX', 'DEPLOYMENT', 'GRIEVANCE', 'OTHER'];
 const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 const STATUS = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED', 'REOPENED'];
 const THRESHOLD = 0.12, TOP_K = 5;
@@ -148,6 +148,18 @@ router.post('/', vBody(createSchema), asyncHandler((req, res) => {
 
 router.get('/staff-directory', asyncHandler((req, res) => {
     sendSuccess(res, db.prepare("SELECT id, name, department, skills FROM staff WHERE status = 1 AND role IN ('agent','officer') ORDER BY name").all(), 'Assignable staff');
+}));
+
+// Team roster (OIC → PM → TL → Developer) with each member's open + resolved ticket load.
+router.get('/team', asyncHandler((req, res) => {
+    const rows = db.prepare(`
+        SELECT s.id, s.name, s.name_hi AS nameHi, s.email, s.grade, s.department, s.skills,
+            (SELECT COUNT(*) FROM tickets t WHERE t.assigned_staff_id = s.id AND t.status NOT IN ('RESOLVED','CLOSED')) AS openCount,
+            (SELECT COUNT(*) FROM tickets t WHERE t.assigned_staff_id = s.id AND t.status IN ('RESOLVED','CLOSED')) AS resolvedCount
+        FROM staff s
+        WHERE s.status = 1 AND s.grade IS NOT NULL
+        ORDER BY CASE s.grade WHEN 'OIC' THEN 0 WHEN 'PM' THEN 1 WHEN 'TL' THEN 2 ELSE 3 END, s.name`).all();
+    sendSuccess(res, rows, 'Team');
 }));
 
 router.get('/', vQuery(listQuery), asyncHandler((req, res) => {

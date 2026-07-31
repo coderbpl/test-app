@@ -30,6 +30,7 @@
                 <button class="navitem" data-p="grievances"><span class="ic">⚑</span><span>Grievances<span class="hin">शिकायतें</span></span></button>
                 <button class="navitem" data-p="feedback"><span class="ic">★</span><span>Feedback<span class="hin">प्रतिक्रिया</span></span></button>
                 <button class="navitem" data-p="tickets"><span class="ic">🛠</span><span>Tickets<span class="hin">टिकट</span></span></button>
+                <button class="navitem" data-p="team"><span class="ic">👥</span><span>Team<span class="hin">टीम</span></span></button>
             </nav>
             <div class="foot"><div class="who" id="who"></div><a href="#" id="logout">Log out</a></div>
         </aside>
@@ -45,6 +46,7 @@
                 <div class="panel" id="p-grievances"></div>
                 <div class="panel" id="p-feedback"></div>
                 <div class="panel" id="p-tickets"></div>
+                <div class="panel" id="p-team"></div>
             </div>
         </div>
     </div>
@@ -52,7 +54,7 @@
     <div class="modal-bg" id="modal"><div class="modal"><div class="mhead"><span class="ref" id="mRef"></span><button class="x" id="mClose">&times;</button></div><div class="mbody" id="mBody"></div></div></div>
 
     <script>
-        let token = localStorage.getItem('hg_token'), me = JSON.parse(localStorage.getItem('hg_me') || 'null'), staff = [], hospitals = [];
+        let token = localStorage.getItem('hg_token'), me = JSON.parse(localStorage.getItem('hg_me') || 'null'), staff = [], hospitals = [], team = [];
         const hospOptions = (sel) => `<option value="">All hospitals</option>${hospitals.map(h => `<option value="${h.id}" ${String(sel) === String(h.id) ? 'selected' : ''}>${h.name}</option>`).join('')}`;
         const api = (p, o = {}) => fetch('/api' + p, { ...o, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(o.headers || {}) } })
             .then(async r => { const b = await r.json().catch(() => ({})); if (r.status === 401) { logout(); throw new Error('Session expired'); } if (!r.ok) throw new Error(b.error || 'Failed'); return b; });
@@ -77,13 +79,13 @@
             try { hospitals = (await api('/hospitals')).data; } catch {}
             show('dashboard');
         }
-        const TITLES = { dashboard: 'Dashboard', grievances: 'Grievances', feedback: 'Feedback', tickets: 'Tickets' };
+        const TITLES = { dashboard: 'Dashboard', grievances: 'Grievances', feedback: 'Feedback', tickets: 'Tickets', team: 'Team' };
         document.querySelectorAll('.navitem').forEach(n => n.addEventListener('click', () => show(n.dataset.p)));
         function show(p) {
             document.querySelectorAll('.navitem').forEach(n => n.classList.toggle('active', n.dataset.p === p));
             document.querySelectorAll('.panel').forEach(x => x.classList.toggle('active', x.id === 'p-' + p));
             $('panelTitle').textContent = TITLES[p];
-            ({ dashboard: loadDashboard, grievances: loadGrievances, feedback: loadFeedback, tickets: loadTickets }[p])();
+            ({ dashboard: loadDashboard, grievances: loadGrievances, feedback: loadFeedback, tickets: loadTickets, team: loadTeam }[p])();
         }
 
         // ---------- DASHBOARD ----------
@@ -150,6 +152,7 @@
                     <div class="k">Department</div><div>${esc(g.department || '—')}</div>
                     <div class="k">Complainant</div><div>${g.isAnonymous ? 'Anonymous' : esc(g.complainantName || '—') + (g.complainantMobile ? ' · ' + esc(g.complainantMobile) : '')}</div>
                     <div class="k">Owner tier</div><div>${esc(g.currentOwnerTier)}${g.assignedStaffName ? ' · ' + esc(g.assignedStaffName) : ''}</div>
+                    ${g.linkedTicketRef ? `<div class="k">Work ticket</div><div><strong>${esc(g.linkedTicketRef)}</strong> ${g.linkedTicketStatus ? pill('status', g.linkedTicketStatus) : ''} — ${g.linkedTicketAssignee ? 'assigned to ' + esc(g.linkedTicketAssignee) : 'unassigned'}</div>` : ''}
                 </div>
                 <div class="row" style="margin-top:12px">
                     <select id="gsStatus"><option value="">Change status…</option>${['ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'].map(s => `<option>${s}</option>`).join('')}</select>
@@ -213,7 +216,7 @@
             el.innerHTML = `<div class="toolbar">
                 <input class="grow" id="tq" placeholder="Search…"/>
                 <select id="tStatus"><option value="">All statuses</option>${['OPEN','ASSIGNED','IN_PROGRESS','PENDING','RESOLVED','CLOSED'].map(s => `<option>${s}</option>`).join('')}</select>
-                <select id="tCat"><option value="">All categories</option>${['BUG','FEATURE','API','DATABASE','UI_UX','DEPLOYMENT','OTHER'].map(s => `<option>${s}</option>`).join('')}</select>
+                <select id="tCat"><option value="">All categories</option>${['BUG','FEATURE','API','DATABASE','UI_UX','DEPLOYMENT','GRIEVANCE','OTHER'].map(s => `<option>${s}</option>`).join('')}</select>
                 <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="tMine" style="width:auto"> Mine</label>
                 <button id="tNew">+ New ticket</button><button class="ghost" id="tRefresh">Refresh</button></div><div id="tList"><p class="muted">Loading…</p></div>`;
             const run = async () => {
@@ -275,6 +278,46 @@
             $('tsMine').onclick = async () => { await api(`/tickets/${id}/assign-to-me`, { method: 'POST' }); reload(); };
             $('tsDoStatus').onclick = async () => { await api(`/tickets/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: $('tsStatus').value, resolution: $('tsResolution').value || undefined }) }); reload(); };
             $('tsSend').onclick = async () => { if (!$('tsReply').value.trim()) return; await api(`/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify({ body: $('tsReply').value.trim(), isInternal: $('tsInternal').checked }) }); reload(); };
+        }
+
+        // ---------- TEAM ----------
+        const GRADES = { OIC: 'Officer In Charge (OIC)', PM: 'Project Manager (PM)', TL: 'Team Leads (TL)', DEVELOPER: 'Developers' };
+        async function loadTeam() {
+            const el = $('p-team'); el.innerHTML = '<p class="muted">Loading…</p>';
+            team = (await api('/tickets/team')).data;
+            let html = '<p class="muted" style="margin-top:0">Tickets (including those formed from grievances) auto-route to developers by description. Click a member to view and reassign their open tickets.</p>';
+            for (const grade of Object.keys(GRADES)) {
+                const members = team.filter(m => m.grade === grade);
+                if (!members.length) continue;
+                html += `<h3 style="margin:14px 0 8px;color:var(--navy)">${GRADES[grade]}</h3><div class="stat-grid">` +
+                    members.map(m => `<div class="stat" data-mid="${m.id}" data-mname="${esc(m.name)}" style="cursor:pointer">
+                        <div style="font-weight:800">${esc(m.name)}</div>
+                        <div class="muted" style="font-size:12px">${esc(m.department || '')}${m.skills ? ' · ' + esc(m.skills) : ''}</div>
+                        <div style="margin-top:8px"><span class="num" style="font-size:22px">${m.openCount}</span> <span class="lbl">open</span> · <span class="muted">${m.resolvedCount} resolved</span></div>
+                    </div>`).join('') + '</div>';
+            }
+            el.innerHTML = html + '<div id="memberTickets"></div>';
+            el.querySelectorAll('.stat[data-mid]').forEach(c => c.addEventListener('click', () => loadMemberTickets(Number(c.dataset.mid), c.dataset.mname)));
+        }
+        async function loadMemberTickets(mid, mname) {
+            const box = $('memberTickets');
+            box.innerHTML = `<h3 style="margin-top:18px">Tickets — ${esc(mname)}</h3><p class="muted">Loading…</p>`;
+            const data = (await api(`/tickets?assignedStaffId=${mid}&limit=100`)).data;
+            const open = data.filter(t => !['RESOLVED', 'CLOSED'].includes(t.status));
+            const devs = team.filter(m => m.grade === 'DEVELOPER' || m.grade === 'TL');
+            box.innerHTML = `<h3 style="margin-top:18px">Open tickets — ${esc(mname)} (${open.length})</h3>` + (open.length
+                ? `<table><thead><tr><th>Ref</th><th>Subject</th><th>Status</th><th>Reassign to</th></tr></thead><tbody>${open.map(t => `
+                    <tr><td><strong>${esc(t.refNo)}</strong> ${pill(t.priority, t.priority)}<div class="muted" style="font-size:12px">${esc(t.category || '')}</div></td>
+                    <td>${esc(t.subject)}</td><td>${pill('status', t.status)}</td>
+                    <td><div style="display:flex;gap:6px"><select class="reSel" data-tid="${t.id}">${devs.map(d => `<option value="${d.id}" ${d.id === t.assignedStaffId ? 'selected' : ''}>${esc(d.name)}${d.grade === 'TL' ? ' (TL)' : ''}</option>`).join('')}</select>
+                    <button class="btn ghost reBtn" data-tid="${t.id}" style="padding:6px 12px">Reassign</button></div></td></tr>`).join('')}</tbody></table>`
+                : '<p class="muted">No open tickets.</p>');
+            box.querySelectorAll('.reBtn').forEach(b => b.addEventListener('click', async () => {
+                const tid = b.dataset.tid, sel = box.querySelector(`.reSel[data-tid="${tid}"]`);
+                b.disabled = true;
+                await api(`/tickets/${tid}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: Number(sel.value) }) });
+                await loadTeam(); loadMemberTickets(mid, mname);
+            }));
         }
 
         $('mClose').addEventListener('click', () => $('modal').classList.remove('open'));

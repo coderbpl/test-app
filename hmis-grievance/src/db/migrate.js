@@ -27,6 +27,7 @@ export function migrate() {
 
     // Additive migrations
     ensureColumn('grievances', 'hospital_id', 'hospital_id INTEGER REFERENCES hospitals(id)');
+    ensureColumn('grievances', 'linked_ticket_id', 'linked_ticket_id INTEGER REFERENCES tickets(id)');
     ensureColumn('feedback', 'feedback_type', "feedback_type TEXT NOT NULL DEFAULT 'SERVICE'");
     ensureColumn('feedback', 'hospital_id', 'hospital_id INTEGER REFERENCES hospitals(id)');
     ensureColumn('feedback', 'rating_ease', 'rating_ease INTEGER');

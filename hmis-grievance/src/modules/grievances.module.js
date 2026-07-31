@@ -4,6 +4,10 @@ import { db } from '../config/db.js';
 import { sendSuccess, sendCreated, sendPaginated, asyncHandler, sanitizePagination, buildRef, NotFoundError, BadRequestError } from '../utils/index.js';
 import { authenticate, vBody, vParams, vQuery } from '../middlewares/index.js';
 import { rewriteText, aiEnabled } from './ai.service.js';
+import { createTicketAutoRouted } from './tickets.module.js';
+
+// Grievance priority (CRITICAL) → ticket priority (URGENT); others map 1:1.
+const TICKET_PRIORITY = { LOW: 'LOW', MEDIUM: 'MEDIUM', HIGH: 'HIGH', CRITICAL: 'URGENT' };
 
 const nowIso = () => new Date().toISOString();
 const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
@@ -51,8 +55,15 @@ const ROW = `
     g.complainant_name AS complainantName, g.complainant_mobile AS complainantMobile, g.complainant_email AS complainantEmail,
     g.hospital_id AS hospitalId, h.name AS hospitalName, g.facility, g.department, g.priority, g.status, g.is_urgent AS isUrgent,
     g.current_owner_tier AS currentOwnerTier,
-    g.assigned_staff_id AS assignedStaffId, s.name AS assignedStaffName, g.resolution,
-    g.resolved_at AS resolvedAt, g.closed_at AS closedAt, g.created_at AS createdAt, g.updated_at AS updatedAt`;
+    g.assigned_staff_id AS assignedStaffId, s.name AS assignedStaffName,
+    g.linked_ticket_id AS linkedTicketId, lt.ref_no AS linkedTicketRef, lt.status AS linkedTicketStatus, ts.name AS linkedTicketAssignee,
+    g.resolution, g.resolved_at AS resolvedAt, g.closed_at AS closedAt, g.created_at AS createdAt, g.updated_at AS updatedAt`;
+
+const JOINS = `LEFT JOIN grievance_categories c ON c.id = g.category_id
+    LEFT JOIN staff s ON s.id = g.assigned_staff_id
+    LEFT JOIN hospitals h ON h.id = g.hospital_id
+    LEFT JOIN tickets lt ON lt.id = g.linked_ticket_id
+    LEFT JOIN staff ts ON ts.id = lt.assigned_staff_id`;
 
 function timeline(gid, e) {
     db.prepare(`INSERT INTO grievance_timeline (grievance_id, event_type, from_status, to_status, comment, actor_staff_id, actor_name, is_internal)
@@ -60,7 +71,7 @@ function timeline(gid, e) {
         .run({ gid, type: e.type, from: e.from ?? null, to: e.to ?? null, comment: e.comment ?? null, actorId: e.actorId ?? null, actorName: e.actorName ?? null, internal: e.internal ? 1 : 0 });
 }
 function getRow(id) {
-    return db.prepare(`SELECT ${ROW} FROM grievances g LEFT JOIN grievance_categories c ON c.id = g.category_id LEFT JOIN staff s ON s.id = g.assigned_staff_id LEFT JOIN hospitals h ON h.id = g.hospital_id WHERE g.id = ?`).get(id) || null;
+    return db.prepare(`SELECT ${ROW} FROM grievances g ${JOINS} WHERE g.id = ?`).get(id) || null;
 }
 
 /**
@@ -90,7 +101,26 @@ export function createGrievance(dto, { actorName = null, actorId = null } = {}) 
         timeline(id, { type: 'CREATED', to: 'NEW', comment: 'Grievance filed', actorId, actorName: actorName || dto.complainantName || 'Anonymous' });
         return id;
     });
-    return getRow(tx());
+    const id = tx();
+
+    // Form the grievance into a work ticket and auto-route it to the right developer.
+    const g = getRow(id);
+    const { ticket, recommendation } = createTicketAutoRouted({
+        subject: `[${g.refNo}] ${g.categoryName || 'Grievance'}${g.department ? ' — ' + g.department : ''}`,
+        body: g.description,
+        category: 'GRIEVANCE',
+        priority: TICKET_PRIORITY[g.priority] || 'MEDIUM',
+        facility: g.hospitalName || g.facility || null,
+        createdByName: 'Grievance intake'
+    });
+    db.prepare('UPDATE grievances SET linked_ticket_id = ? WHERE id = ?').run(ticket.id, id);
+    if (recommendation.recommended) {
+        timeline(id, {
+            type: 'ASSIGNED', internal: 1, actorName: 'Auto-router',
+            comment: `Formed into ticket ${ticket.refNo} — assigned to ${recommendation.recommended.staffName} (${recommendation.source})`
+        });
+    }
+    return getRow(id);
 }
 
 function detail(id) {
@@ -140,7 +170,7 @@ router.get('/', authenticate, vQuery(listQuery), asyncHandler((req, res) => {
     if (req.query.isUrgent !== undefined) { where.push('g.is_urgent = @u'); p.u = req.query.isUrgent ? 1 : 0; }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const rows = db.prepare(`SELECT ${ROW}
-        FROM grievances g LEFT JOIN grievance_categories c ON c.id = g.category_id LEFT JOIN staff s ON s.id = g.assigned_staff_id LEFT JOIN hospitals h ON h.id = g.hospital_id
+        FROM grievances g ${JOINS}
         ${clause}
         ORDER BY g.is_urgent DESC, CASE g.priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, g.created_at DESC
         LIMIT @limit OFFSET @offset`).all({ ...p, limit, offset });
