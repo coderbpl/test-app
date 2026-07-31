@@ -5,6 +5,7 @@ import { sendSuccess, sendCreated, sendPaginated, asyncHandler, sanitizePaginati
 import { authenticate, vBody, vParams, vQuery } from '../middlewares/index.js';
 import { tokenize, toVector, cosine } from '../utils/textSimilarity.js';
 import { sendMail } from './email.service.js';
+import { rewriteText, aiEnabled } from './ai.service.js';
 
 const nowIso = () => new Date().toISOString();
 const CATEGORY = ['BUG', 'FEATURE', 'API', 'DATABASE', 'UI_UX', 'DEPLOYMENT', 'GRIEVANCE', 'OTHER'];
@@ -29,14 +30,29 @@ const listQuery = Joi.object({
 const assignSchema = Joi.object({ staffId: Joi.number().integer().positive().required() });
 const statusSchema = Joi.object({ status: Joi.string().valid(...STATUS).required(), resolution: Joi.string().max(5000).allow('', null) });
 const replySchema = Joi.object({ body: Joi.string().min(1).max(10000).required(), isInternal: Joi.boolean().default(false) });
+// Public grievance/issue intake (citizen-facing) — becomes a ticket routed to a developer.
+const publicSchema = Joi.object({
+    description: Joi.string().min(5).max(5000).required(),
+    subject: Joi.string().max(250).allow('', null),
+    hospitalId: Joi.number().integer().positive().optional(),
+    isAnonymous: Joi.boolean().default(false),
+    requesterName: Joi.string().max(150).allow('', null),
+    requesterEmail: Joi.string().email({ tlds: { allow: false } }).allow('', null),
+    requesterMobile: Joi.string().max(20).allow('', null)
+});
+const refParam = Joi.object({ refNo: Joi.string().max(30).required() });
+const rewriteSchema = Joi.object({ subject: Joi.string().max(250).allow('', null), text: Joi.string().min(3).max(5000).required() });
 
 const ROW = `
-    t.id, t.ref_no AS refNo, t.subject, t.body, t.category, t.facility, t.priority, t.status,
-    t.raised_by_staff_id AS raisedByStaffId, t.assigned_staff_id AS assignedStaffId, s.name AS assignedStaffName,
+    t.id, t.ref_no AS refNo, t.subject, t.body, t.category, t.source, t.facility,
+    t.hospital_id AS hospitalId, h.name AS hospitalName,
+    t.requester_name AS requesterName, t.requester_email AS requesterEmail, t.requester_mobile AS requesterMobile, t.is_anonymous AS isAnonymous,
+    t.priority, t.status, t.raised_by_staff_id AS raisedByStaffId, t.assigned_staff_id AS assignedStaffId, s.name AS assignedStaffName,
     t.resolution, t.resolved_at AS resolvedAt, t.created_at AS createdAt, t.updated_at AS updatedAt`;
+const JOINS = 'LEFT JOIN staff s ON s.id = t.assigned_staff_id LEFT JOIN hospitals h ON h.id = t.hospital_id';
 
 function getRow(id) {
-    return db.prepare(`SELECT ${ROW} FROM tickets t LEFT JOIN staff s ON s.id = t.assigned_staff_id WHERE t.id = ?`).get(id) || null;
+    return db.prepare(`SELECT ${ROW} FROM tickets t ${JOINS} WHERE t.id = ?`).get(id) || null;
 }
 function event(id, type, detail, actorName) {
     db.prepare('INSERT INTO ticket_events (ticket_id, event_type, detail, actor_name) VALUES (?, ?, ?, ?)').run(id, type, detail ?? null, actorName ?? null);
@@ -120,9 +136,16 @@ function notifyAssignee(ticketId, staffId, auto) {
  * @returns {{ ticket: object, recommendation: object }}
  */
 export function createTicketAutoRouted(dto) {
-    const info = db.prepare(`INSERT INTO tickets (subject, body, category, facility, priority, status, raised_by_staff_id)
-                             VALUES (@subject, @body, @category, @facility, @priority, 'OPEN', @by)`)
-        .run({ subject: dto.subject, body: dto.body, category: dto.category ?? null, facility: dto.facility ?? null, priority: dto.priority || 'MEDIUM', by: dto.raisedByStaffId ?? null });
+    const info = db.prepare(
+        `INSERT INTO tickets (subject, body, category, source, facility, hospital_id, requester_name, requester_email,
+                              requester_mobile, is_anonymous, priority, status, raised_by_staff_id)
+         VALUES (@subject, @body, @category, @source, @facility, @hospitalId, @rname, @remail, @rmobile, @anon, @priority, 'OPEN', @by)`
+    ).run({
+        subject: dto.subject, body: dto.body, category: dto.category ?? null, source: dto.source || 'STAFF',
+        facility: dto.facility ?? null, hospitalId: dto.hospitalId ?? null,
+        rname: dto.requesterName ?? null, remail: dto.requesterEmail ?? null, rmobile: dto.requesterMobile ?? null,
+        anon: dto.isAnonymous ? 1 : 0, priority: dto.priority || 'MEDIUM', by: dto.raisedByStaffId ?? null
+    });
     const id = Number(info.lastInsertRowid);
     db.prepare('UPDATE tickets SET ref_no = ? WHERE id = ?').run(buildRef('TKT', id), id);
     event(id, 'CREATED', dto.createdByName ? `Raised by ${dto.createdByName}` : 'Created', dto.createdByName ?? null);
@@ -136,8 +159,46 @@ export function createTicketAutoRouted(dto) {
     return { ticket: getRow(id), recommendation };
 }
 
-// ---- Router (all staff-auth: internal tickets) ----
+// ---- Router ----
 const router = Router();
+
+// Public routes (citizen-facing) — declared before the auth guard.
+router.post('/rewrite', vBody(rewriteSchema), asyncHandler(async (req, res) => {
+    const rewritten = await rewriteText({ subject: req.body.subject, text: req.body.text });
+    sendSuccess(res, { rewritten, aiAvailable: rewritten !== null }, rewritten ? 'Rewritten' : (aiEnabled() ? 'AI service is not reachable' : 'AI is not configured'));
+}));
+
+router.post('/public', vBody(publicSchema), asyncHandler((req, res) => {
+    const d = req.body;
+    const subject = (d.subject && d.subject.trim()) || d.description.trim().slice(0, 80);
+    const { ticket } = createTicketAutoRouted({
+        subject, body: d.description, category: 'GRIEVANCE', source: 'WEB', hospitalId: d.hospitalId ?? null,
+        isAnonymous: d.isAnonymous,
+        requesterName: d.isAnonymous ? null : (d.requesterName || null),
+        requesterEmail: d.isAnonymous ? null : (d.requesterEmail || null),
+        requesterMobile: d.isAnonymous ? null : (d.requesterMobile || null),
+        createdByName: d.isAnonymous ? 'Anonymous' : (d.requesterName || 'Public')
+    });
+    // Public response carries only the reference — no internal assignee or other PII.
+    sendCreated(res, { refNo: ticket.refNo, status: ticket.status }, `Submitted. Your reference number is ${ticket.refNo}`);
+}));
+
+router.get('/track/:refNo', vParams(refParam), asyncHandler((req, res) => {
+    const t = db.prepare(`SELECT ref_no AS refNo, subject, category, priority, status, created_at AS createdAt, resolved_at AS resolvedAt
+                          FROM tickets WHERE ref_no = ?`).get(req.params.refNo);
+    if (!t) throw new NotFoundError('No record found for that reference number');
+    const events = db.prepare(`SELECT te.event_type AS eventType, te.detail, te.created_at AS createdAt
+                               FROM ticket_events te JOIN tickets tk ON tk.id = te.ticket_id
+                               WHERE tk.ref_no = ? AND te.event_type IN ('CREATED','STATUS_CHANGE') ORDER BY te.created_at ASC`).all(req.params.refNo);
+    const replies = db.prepare(`SELECT tm.body AS detail, tm.created_at AS createdAt
+                                FROM ticket_messages tm JOIN tickets tk ON tk.id = tm.ticket_id
+                                WHERE tk.ref_no = ? AND tm.is_internal = 0 AND tm.direction = 'REPLY' ORDER BY tm.created_at ASC`).all(req.params.refNo)
+        .map((r) => ({ eventType: 'REPLY', detail: r.detail, createdAt: r.createdAt }));
+    const timeline = [...events, ...replies].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    sendSuccess(res, { ...t, timeline }, 'Status');
+}));
+
+// ---- Staff routes (auth required) ----
 router.use(authenticate);
 
 router.post('/', vBody(createSchema), asyncHandler((req, res) => {
@@ -172,7 +233,7 @@ router.get('/', vQuery(listQuery), asyncHandler((req, res) => {
     add('t.category = @category', 'category', req.query.category);
     add('t.assigned_staff_id = @asid', 'asid', req.query.assignedStaffId === 'me' ? req.staff.id : req.query.assignedStaffId);
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const rows = db.prepare(`SELECT ${ROW} FROM tickets t LEFT JOIN staff s ON s.id = t.assigned_staff_id ${clause}
+    const rows = db.prepare(`SELECT ${ROW} FROM tickets t ${JOINS} ${clause}
         ORDER BY CASE t.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, t.created_at DESC
         LIMIT @limit OFFSET @offset`).all({ ...p, limit, offset });
     const { total } = db.prepare(`SELECT COUNT(*) AS total FROM tickets t ${clause}`).get(p);

@@ -34,6 +34,12 @@ export function migrate() {
     ensureColumn('feedback', 'rating_speed', 'rating_speed INTEGER');
     ensureColumn('feedback', 'linked_ticket_id', 'linked_ticket_id INTEGER REFERENCES tickets(id)');
     ensureColumn('staff', 'grade', 'grade TEXT');
+    ensureColumn('tickets', 'source', "source TEXT NOT NULL DEFAULT 'STAFF'");
+    ensureColumn('tickets', 'hospital_id', 'hospital_id INTEGER REFERENCES hospitals(id)');
+    ensureColumn('tickets', 'requester_name', 'requester_name TEXT');
+    ensureColumn('tickets', 'requester_email', 'requester_email TEXT');
+    ensureColumn('tickets', 'requester_mobile', 'requester_mobile TEXT');
+    ensureColumn('tickets', 'is_anonymous', 'is_anonymous INTEGER NOT NULL DEFAULT 0');
 
     // SLA removed — tear down deadline columns/index left over from older databases.
     db.exec('DROP INDEX IF EXISTS ix_grv_sla');

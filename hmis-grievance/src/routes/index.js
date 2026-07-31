@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import authRoutes from '../modules/auth.module.js';
-import grievanceRoutes from '../modules/grievances.module.js';
 import feedbackRoutes from '../modules/feedback.module.js';
 import ticketRoutes from '../modules/tickets.module.js';
 import dashboardRoutes from '../modules/dashboard.module.js';
@@ -15,7 +14,6 @@ router.get('/hospitals', (req, res) => res.json({
     data: db.prepare('SELECT id, name, name_hi AS nameHi, district, type FROM hospitals WHERE status = 1 ORDER BY district, name').all()
 }));
 router.use('/auth', authRoutes);
-router.use('/grievances', grievanceRoutes);
 router.use('/feedback', feedbackRoutes);
 router.use('/tickets', ticketRoutes);
 router.use('/dashboard', dashboardRoutes);

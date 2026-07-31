@@ -124,8 +124,16 @@ CREATE TABLE IF NOT EXISTS tickets (
     ref_no              TEXT    UNIQUE,
     subject             TEXT    NOT NULL,
     body                TEXT    NOT NULL,
-    category            TEXT,   -- IT, BIOMEDICAL, FACILITY, HOUSEKEEPING, SUPPLY, OTHER
+    category            TEXT,   -- BUG, FEATURE, API, DATABASE, UI_UX, DEPLOYMENT, GRIEVANCE, OTHER
+    -- How it arrived: WEB (public grievance form), EMAIL, API, or STAFF (raised internally).
+    source              TEXT    NOT NULL DEFAULT 'STAFF',
     facility            TEXT,
+    hospital_id         INTEGER REFERENCES hospitals(id),
+    -- Reporter (for public grievance intake; null for internal staff tickets).
+    requester_name      TEXT,
+    requester_email     TEXT,
+    requester_mobile    TEXT,
+    is_anonymous        INTEGER NOT NULL DEFAULT 0,
     priority            TEXT    NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('LOW','MEDIUM','HIGH','URGENT')),
     status              TEXT    NOT NULL DEFAULT 'OPEN'
         CHECK (status IN ('OPEN','ASSIGNED','IN_PROGRESS','PENDING','RESOLVED','CLOSED','REOPENED')),

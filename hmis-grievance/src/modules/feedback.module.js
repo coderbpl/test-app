@@ -3,7 +3,6 @@ import Joi from 'joi';
 import { db } from '../config/db.js';
 import { sendSuccess, sendCreated, sendPaginated, asyncHandler, sanitizePagination, buildRef, NotFoundError } from '../utils/index.js';
 import { authenticate, vBody, vParams, vQuery } from '../middlewares/index.js';
-import { createGrievance } from './grievances.module.js';
 import { createTicketAutoRouted } from './tickets.module.js';
 
 const r1to5 = Joi.number().integer().min(1).max(5);
@@ -61,33 +60,30 @@ router.post('/', vBody(createSchema), asyncHandler((req, res) => {
     const id = Number(info.lastInsertRowid);
     db.prepare('UPDATE feedback SET ref_no = ? WHERE id = ?').run(buildRef('FBK', id), id);
 
-    // Closed loop for poor ratings (<=2): a hospital-SERVICE rating becomes a grievance; an
-    // HMIS-APP rating becomes a routed IT ticket. Both get followed up by the right team.
-    let linkedGrievance = null, linkedTicket = null;
+    // Closed loop: any poor rating (<=2) becomes a routed ticket so it's followed up (not left on a
+    // survey). App feedback → a BUG ticket; hospital-service feedback → a GRIEVANCE ticket.
+    let linkedTicket = null;
     if (d.ratingOverall <= 2) {
-        if ((d.feedbackType || 'SERVICE') === 'SERVICE') {
-            linkedGrievance = createGrievance({
-                subject: `Low patient feedback (${d.ratingOverall}/5)${d.department ? ' — ' + d.department : ''}`,
-                description: d.comment?.trim() ? d.comment.trim() : `Patient rated the experience ${d.ratingOverall}/5. No comment provided.`,
-                hospitalId: d.hospitalId ?? null, facility: d.facility ?? null, department: d.department ?? null, isAnonymous: d.isAnonymous !== false,
-                complainantName: d.patientName ?? null, complainantMobile: d.patientMobile ?? null
-            }, { actorName: 'Feedback system' });
-            db.prepare('UPDATE feedback SET linked_grievance_id = ? WHERE id = ?').run(linkedGrievance.id, id);
-        } else {
-            linkedTicket = createTicketAutoRouted({
-                subject: `Low HMIS app rating (${d.ratingOverall}/5)`,
-                body: d.comment?.trim() ? d.comment.trim() : `A user rated the HMIS application ${d.ratingOverall}/5 with no comment.`,
-                category: 'BUG', priority: 'MEDIUM', createdByName: 'App feedback'
-            }).ticket;
-            db.prepare('UPDATE feedback SET linked_ticket_id = ? WHERE id = ?').run(linkedTicket.id, id);
-        }
+        const isApp = (d.feedbackType || 'SERVICE') === 'APP';
+        linkedTicket = createTicketAutoRouted({
+            subject: isApp ? `Low HMIS app rating (${d.ratingOverall}/5)`
+                : `Low service feedback (${d.ratingOverall}/5)${d.department ? ' — ' + d.department : ''}`,
+            body: d.comment?.trim() ? d.comment.trim() : `Rated ${d.ratingOverall}/5 with no comment.`,
+            category: isApp ? 'BUG' : 'GRIEVANCE', source: 'WEB', priority: 'MEDIUM',
+            hospitalId: d.hospitalId ?? null,
+            isAnonymous: d.isAnonymous !== false,
+            requesterName: d.isAnonymous === false ? (d.patientName || null) : null,
+            requesterMobile: d.isAnonymous === false ? (d.patientMobile || null) : null,
+            createdByName: 'Feedback'
+        }).ticket;
+        db.prepare('UPDATE feedback SET linked_ticket_id = ? WHERE id = ?').run(linkedTicket.id, id);
     }
 
     const feedback = db.prepare(`SELECT ${ROW} FROM feedback WHERE id = ?`).get(id);
-    const msg = linkedGrievance ? `Thank you. We've logged a follow-up (${linkedGrievance.refNo}) for your concern.`
-        : linkedTicket ? `Thank you. We've raised an IT ticket (${linkedTicket.refNo}) to improve the app.`
-            : 'Thank you for your feedback.';
-    sendCreated(res, { feedback, linkedGrievance, linkedTicket }, msg);
+    const msg = linkedTicket
+        ? `Thank you. We've raised a ticket (${linkedTicket.refNo}) to follow up on your concern.`
+        : 'Thank you for your feedback.';
+    sendCreated(res, { feedback, linkedTicket }, msg);
 }));
 
 // Staff — analytics

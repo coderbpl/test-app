@@ -49,5 +49,12 @@ export const env = Object.freeze({
             user: process.env.SMTP_USER || '',
             pass: process.env.SMTP_PASS || ''
         }
+    },
+
+    // TLS — when a key + cert are provided the server runs over HTTPS so PII (names, mobiles,
+    // emails) is encrypted in transit rather than sent as plain text.
+    ssl: {
+        keyFile: process.env.SSL_KEY_FILE ? fromRoot(process.env.SSL_KEY_FILE) : '',
+        certFile: process.env.SSL_CERT_FILE ? fromRoot(process.env.SSL_CERT_FILE) : ''
     }
 });
