@@ -40,6 +40,13 @@ export function migrate() {
     ensureColumn('tickets', 'requester_email', 'requester_email TEXT');
     ensureColumn('tickets', 'requester_mobile', 'requester_mobile TEXT');
     ensureColumn('tickets', 'is_anonymous', 'is_anonymous INTEGER NOT NULL DEFAULT 0');
+    ensureColumn('staff', 'specialty', 'specialty TEXT');
+    ensureColumn('tickets', 'severity', 'severity TEXT');
+    ensureColumn('tickets', 'module', 'module TEXT');
+    ensureColumn('tickets', 'technology', 'technology TEXT');
+    ensureColumn('tickets', 'ai_summary', 'ai_summary TEXT');
+    ensureColumn('tickets', 'root_cause', 'root_cause TEXT');
+    ensureColumn('tickets', 'technical_analysis', 'technical_analysis TEXT');
 
     // SLA removed — tear down deadline columns/index left over from older databases.
     db.exec('DROP INDEX IF EXISTS ix_grv_sla');

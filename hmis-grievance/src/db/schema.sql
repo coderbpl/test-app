@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS staff (
     skills         TEXT,
     -- Ticket-team grade for the OIC → PM → TL → Developer hierarchy (null for grievance officers).
     grade          TEXT    CHECK (grade IN ('OIC','PM','TL','DEVELOPER')),
+    -- Developer specialty used to route by the grievance's technology.
+    specialty      TEXT    CHECK (specialty IN ('UI_UX','BACKEND','DATABASE','MOBILE')),
     status         INTEGER NOT NULL DEFAULT 1,
     created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -135,6 +137,14 @@ CREATE TABLE IF NOT EXISTS tickets (
     requester_mobile    TEXT,
     is_anonymous        INTEGER NOT NULL DEFAULT 0,
     priority            TEXT    NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('LOW','MEDIUM','HIGH','URGENT')),
+    severity            TEXT,   -- AI-assessed severity (LOW/MEDIUM/HIGH/CRITICAL)
+    -- Groq analysis: which HMIS module + technology stack, and a one-line summary.
+    module              TEXT,
+    technology          TEXT,   -- UI_UX | BACKEND | DATABASE | MOBILE
+    ai_summary          TEXT,
+    -- Developer-only fields (visible only in the console, never to the public).
+    root_cause          TEXT,
+    technical_analysis  TEXT,
     status              TEXT    NOT NULL DEFAULT 'OPEN'
         CHECK (status IN ('OPEN','ASSIGNED','IN_PROGRESS','PENDING','RESOLVED','CLOSED','REOPENED')),
     raised_by_staff_id  INTEGER REFERENCES staff(id),

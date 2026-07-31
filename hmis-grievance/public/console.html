@@ -17,14 +17,14 @@
             <label>Email</label><input id="email" type="email" value="admin@mphmis.local" />
             <label>Password</label><input id="password" type="password" value="admin123" />
             <div class="btn-row"><button id="loginBtn" style="width:100%;justify-content:center">Log in</button></div>
-            <div class="help" style="margin-top:12px">Admin: admin@mphmis.local / admin123 · Team: oic@ / pm@ / tl.backend@ / vikram@ / neha@ / amit@ / ravi@ / pooja@mphmis.local / staff123</div>
+            <div class="help" style="margin-top:12px">Admin: admin@mphmis.local / admin123 · Team (staff123): oic@ · pm@ · tl@ · developers neha@ (UI/UX) · vikram@ / ravi@ (Backend) · amit@ (Database) · pooja@ (Mobile) @mphmis.local</div>
         </div>
     </div>
 
     <!-- SHELL -->
     <div class="shell hidden" id="shell">
         <aside class="rail" id="rail">
-            <div class="head"><div class="crest">⚕️</div><div class="t">MP HMIS<br><span style="font-weight:400;opacity:.7;font-size:11px">Grievance Cell</span></div></div>
+            <div class="head"><div class="crest">⚕️</div><div class="t">MP HMIS<br><span style="font-weight:400;opacity:.7;font-size:11px">MPSEDC · Support</span></div></div>
             <nav>
                 <button class="navitem active" data-p="dashboard"><span class="ic">▩</span><span>Dashboard<span class="hin">डैशबोर्ड</span></span></button>
                 <button class="navitem" data-p="feedback"><span class="ic">★</span><span>Feedback<span class="hin">प्रतिक्रिया</span></span></button>
@@ -191,13 +191,20 @@
             const opts = staff.filter(s => s.role !== undefined).map(s => `<option value="${s.id}" ${s.id === t.assignedStaffId ? 'selected' : ''}>${esc(s.name)}${s.department ? ' — ' + esc(s.department) : ''}</option>`).join('');
             $('mBody').innerHTML = `<div class="grid2">
                 <div>
-                    <div style="margin-bottom:8px">${pill(t.priority, t.priority)} ${pill('status', t.status)} ${t.category ? pill('MEDIUM', t.category) : ''}</div>
-                    <div class="kv"><div class="k">Subject</div><div>${esc(t.subject)}</div><div class="k">Details</div><div>${esc(t.body)}</div>
+                    <div style="margin-bottom:8px">${pill(t.priority, 'Priority: ' + t.priority)} ${t.severity ? pill(t.severity, 'Severity: ' + t.severity) : ''} ${pill('status', t.status)} ${t.technology ? pill('MEDIUM', t.technology) : ''}${t.module ? ' <span class="muted" style="font-size:12px">· ' + esc(t.module) + '</span>' : ''}</div>
+                    <div class="kv"><div class="k">Subject</div><div>${esc(t.subject)}</div><div class="k">Original grievance</div><div>${esc(t.body)}</div>
+                        ${t.aiSummary ? `<div class="k">AI summary</div><div>${esc(t.aiSummary)}</div>` : ''}
                         <div class="k">Source</div><div>${esc(t.source || 'STAFF')}${t.hospitalName ? ' · ' + esc(t.hospitalName) : ''}</div>
                         ${t.source === 'WEB' ? `<div class="k">Reporter</div><div>${t.isAnonymous ? 'Anonymous' : (esc(t.requesterName || '—') + (t.requesterMobile ? ' · ' + esc(t.requesterMobile) : '') + (t.requesterEmail ? ' · ' + esc(t.requesterEmail) : ''))}</div>` : ''}
-                        <div class="k">Assignee</div><div>${esc(t.assignedStaffName || 'Unassigned')}</div></div>
-                    <h3 style="margin-top:12px;font-size:14px;color:var(--navy)">Conversation</h3>${(t.messages || []).map(m => `<div class="msg ${m.direction}"><div class="meta">${m.direction}${m.isInternal ? ' · internal' : ''} · ${esc(m.authorName || '')} · ${dt(m.createdAt)}</div>${esc(m.body)}</div>`).join('') || '<p class="muted">No messages.</p>'}
-                    <label>Reply / note</label><textarea id="tsReply" style="min-height:60px"></textarea>
+                        <div class="k">Assignee</div><div>${esc(t.assignedStaffName || 'Unassigned')}${t.assignedStaffSpecialty ? ' · ' + esc(t.assignedStaffSpecialty) : ''}</div></div>
+
+                    <h3 style="margin-top:12px;font-size:14px;color:var(--navy)">🔬 Technical analysis <span class="muted" style="font-weight:400">(developer-only)</span></h3>
+                    <label>Root cause</label><textarea id="tsRoot" style="min-height:50px" placeholder="What was actually wrong…">${esc(t.rootCause || '')}</textarea>
+                    <label>Technical analysis</label><textarea id="tsAnalysis" style="min-height:60px" placeholder="Investigation, fix, files/modules touched…">${esc(t.technicalAnalysis || '')}</textarea>
+                    <div class="btn-row"><button class="ghost" id="tsSaveAnalysis">Save analysis</button></div>
+
+                    <h3 style="margin-top:12px;font-size:14px;color:var(--navy)">Comments &amp; history</h3>${(t.messages || []).map(m => `<div class="msg ${m.direction}"><div class="meta">${m.direction}${m.isInternal ? ' · internal' : ''} · ${esc(m.authorName || '')} · ${dt(m.createdAt)}</div>${esc(m.body)}</div>`).join('') || '<p class="muted">No comments.</p>'}
+                    <label>Comment / internal note</label><textarea id="tsReply" style="min-height:60px"></textarea>
                     <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="tsInternal" style="width:auto"> Internal note</label>
                     <div class="btn-row"><button class="ghost" id="tsSend">Save</button></div>
                 </div>
@@ -216,6 +223,7 @@
             $('tsMine').onclick = async () => { await api(`/tickets/${id}/assign-to-me`, { method: 'POST' }); reload(); };
             $('tsDoStatus').onclick = async () => { await api(`/tickets/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: $('tsStatus').value, resolution: $('tsResolution').value || undefined }) }); reload(); };
             $('tsSend').onclick = async () => { if (!$('tsReply').value.trim()) return; await api(`/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify({ body: $('tsReply').value.trim(), isInternal: $('tsInternal').checked }) }); reload(); };
+            $('tsSaveAnalysis').onclick = async () => { await api(`/tickets/${id}/analysis`, { method: 'PATCH', body: JSON.stringify({ rootCause: $('tsRoot').value, technicalAnalysis: $('tsAnalysis').value }) }); reload(); };
         }
 
         // ---------- TEAM ----------
@@ -230,7 +238,7 @@
                 html += `<h3 style="margin:14px 0 8px;color:var(--navy)">${GRADES[grade]}</h3><div class="stat-grid">` +
                     members.map(m => `<div class="stat" data-mid="${m.id}" data-mname="${esc(m.name)}" style="cursor:pointer">
                         <div style="font-weight:800">${esc(m.name)}</div>
-                        <div class="muted" style="font-size:12px">${esc(m.department || '')}${m.skills ? ' · ' + esc(m.skills) : ''}</div>
+                        <div class="muted" style="font-size:12px">${m.specialty ? '<strong>' + esc(m.specialty.replace('_', '/')) + '</strong> · ' : ''}${esc(m.department || '')}</div>
                         <div style="margin-top:8px"><span class="num" style="font-size:22px">${m.openCount}</span> <span class="lbl">open</span> · <span class="muted">${m.resolvedCount} resolved</span></div>
                     </div>`).join('') + '</div>';
             }

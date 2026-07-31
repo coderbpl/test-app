@@ -39,6 +39,7 @@
                     </div>
                     <textarea id="gDesc" maxlength="2000" required placeholder="e.g. HMIS ऐप लॉगिन पर बार-बार क्रैश हो रहा है…"></textarea>
                     <div class="help" style="text-align:right"><span id="gCount">0</span>/2000</div>
+                    <div id="gSuggest"></div>
                     <label style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="gAnon" style="width:auto"> Submit anonymously <span class="hin opt">· गुमनाम</span></label>
                     <div id="gContact" class="row">
                         <div><label>Your name</label><input id="gName" /></div>
@@ -115,9 +116,21 @@
         // Hospitals (both grievance + feedback dropdowns)
         api('/hospitals').then(r => { ['gHosp', 'fHosp'].forEach(id => r.data.forEach(h => { const o = document.createElement('option'); o.value = h.id; o.textContent = `${h.name}${h.district ? ' · ' + h.district : ''}`; $(id).appendChild(o); })); }).catch(() => {});
 
-        // Description character counter
+        // Description character counter + live "suggested resolutions" (debounced)
         const gCount = () => { $('gCount').textContent = $('gDesc').value.length; };
-        $('gDesc').addEventListener('input', gCount);
+        let suggestTimer;
+        const loadSuggest = async () => {
+            const text = $('gDesc').value.trim();
+            if (text.length < 8) { $('gSuggest').innerHTML = ''; return; }
+            try {
+                const r = await api('/tickets/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+                const s = r.data.suggestions;
+                $('gSuggest').innerHTML = s.length
+                    ? `<div class="notice info" style="margin-top:8px"><strong>💡 Suggested fixes from similar resolved issues</strong>${s.map(x => `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(0,0,0,.08)"><span class="pill MEDIUM">${x.match}% match</span>${x.module ? ' · ' + esc(x.module) : ''}<div style="margin-top:3px">${esc(x.resolution)}</div></div>`).join('')}<div class="help" style="margin-top:6px">If one of these resolves it, you may not need to submit.</div></div>`
+                    : '';
+            } catch { $('gSuggest').innerHTML = ''; }
+        };
+        $('gDesc').addEventListener('input', () => { gCount(); clearTimeout(suggestTimer); suggestTimer = setTimeout(loadSuggest, 500); });
 
         // Rewrite with AI
         $('gRewrite').addEventListener('click', async () => {

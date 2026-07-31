@@ -5,7 +5,7 @@ import { sendSuccess, sendCreated, sendPaginated, asyncHandler, sanitizePaginati
 import { authenticate, vBody, vParams, vQuery } from '../middlewares/index.js';
 import { tokenize, toVector, cosine } from '../utils/textSimilarity.js';
 import { sendMail } from './email.service.js';
-import { rewriteText, aiEnabled } from './ai.service.js';
+import { rewriteText, aiEnabled, analyzeGrievance } from './ai.service.js';
 
 const nowIso = () => new Date().toISOString();
 const CATEGORY = ['BUG', 'FEATURE', 'API', 'DATABASE', 'UI_UX', 'DEPLOYMENT', 'GRIEVANCE', 'OTHER'];
@@ -42,12 +42,22 @@ const publicSchema = Joi.object({
 });
 const refParam = Joi.object({ refNo: Joi.string().max(30).required() });
 const rewriteSchema = Joi.object({ subject: Joi.string().max(250).allow('', null), text: Joi.string().min(3).max(5000).required() });
+const analysisSchema = Joi.object({
+    rootCause: Joi.string().max(8000).allow('', null),
+    technicalAnalysis: Joi.string().max(8000).allow('', null),
+    module: Joi.string().max(50).allow('', null),
+    technology: Joi.string().valid('UI_UX', 'BACKEND', 'DATABASE', 'MOBILE').allow('', null),
+    severity: Joi.string().valid('LOW', 'MEDIUM', 'HIGH', 'CRITICAL').allow('', null)
+});
 
 const ROW = `
     t.id, t.ref_no AS refNo, t.subject, t.body, t.category, t.source, t.facility,
     t.hospital_id AS hospitalId, h.name AS hospitalName,
     t.requester_name AS requesterName, t.requester_email AS requesterEmail, t.requester_mobile AS requesterMobile, t.is_anonymous AS isAnonymous,
-    t.priority, t.status, t.raised_by_staff_id AS raisedByStaffId, t.assigned_staff_id AS assignedStaffId, s.name AS assignedStaffName,
+    t.priority, t.severity, t.module, t.technology, t.ai_summary AS aiSummary,
+    t.root_cause AS rootCause, t.technical_analysis AS technicalAnalysis,
+    t.status, t.raised_by_staff_id AS raisedByStaffId, t.assigned_staff_id AS assignedStaffId,
+    s.name AS assignedStaffName, s.specialty AS assignedStaffSpecialty,
     t.resolution, t.resolved_at AS resolvedAt, t.created_at AS createdAt, t.updated_at AS updatedAt`;
 const JOINS = 'LEFT JOIN staff s ON s.id = t.assigned_staff_id LEFT JOIN hospitals h ON h.id = t.hospital_id';
 
@@ -99,6 +109,18 @@ function leastLoaded() {
         FROM staff s WHERE s.status = 1 AND s.grade = 'DEVELOPER' ORDER BY load ASC, s.id ASC LIMIT 1`).get();
     return row ? { staffId: row.staffId, staffName: row.staffName, reason: 'Least-loaded developer (no matching history)' } : null;
 }
+/** Least-loaded developer of a given specialty (UI_UX / BACKEND / DATABASE / MOBILE). */
+function leastLoadedBySpecialty(specialty) {
+    if (!specialty) return null;
+    const row = db.prepare(`SELECT s.id AS staffId, s.name AS staffName,
+            (SELECT COUNT(*) FROM tickets t WHERE t.assigned_staff_id = s.id AND t.status NOT IN ('RESOLVED','CLOSED')) AS load
+        FROM staff s WHERE s.status = 1 AND s.grade = 'DEVELOPER' AND s.specialty = @sp ORDER BY load ASC, s.id ASC LIMIT 1`).get({ sp: specialty });
+    return row ? { staffId: row.staffId, staffName: row.staffName } : null;
+}
+/** Emails of the OIC / PM / Technical Lead — CC'd on every grievance assignment. */
+function leadershipEmails() {
+    return db.prepare("SELECT email FROM staff WHERE status = 1 AND grade IN ('OIC','PM','TL') AND email IS NOT NULL").all().map((r) => r.email);
+}
 /** Routes a ticket to a developer by description: similar past tickets → skill tags → load. */
 function buildRecommendation(ticket) {
     const similar = findSimilar(ticket);
@@ -108,22 +130,26 @@ function buildRecommendation(ticket) {
     return { similar, recommended, source: bySim ? 'similarity' : bySkill ? 'skills' : (recommended ? 'load-balance' : 'none') };
 }
 
-function assign(id, staffId, staffName, { auto = false, actorName } = {}) {
+function assign(id, staffId, staffName, { auto = false, actorName, cc = [] } = {}) {
     db.prepare("UPDATE tickets SET assigned_staff_id=?, status=CASE WHEN status='OPEN' THEN 'ASSIGNED' ELSE status END, updated_at=? WHERE id=?").run(staffId, nowIso(), id);
     event(id, auto ? 'AUTO_ASSIGNED' : 'ASSIGNED', `Assigned to ${staffName}`, actorName || (auto ? 'Auto-router' : staffName));
-    notifyAssignee(id, staffId, auto);
+    notifyAssignee(id, staffId, auto, cc);
 }
 
-/** Emails the assignee about a ticket (best-effort; logs an EMAIL event with the outcome). */
-function notifyAssignee(ticketId, staffId, auto) {
+/** Emails the assignee (CC the OIC/PM/TL) about a ticket; logs an EMAIL event with the outcome. */
+function notifyAssignee(ticketId, staffId, auto, cc = []) {
     const t = getRow(ticketId);
     const s = db.prepare('SELECT name, email FROM staff WHERE id = ?').get(staffId);
     if (!t || !s?.email) return;
-    const subject = `[${t.refNo}] ${auto ? 'Auto-assigned' : 'Assigned'}: ${t.subject}`;
-    const text = `Hi ${s.name},\n\nTicket ${t.refNo} has been ${auto ? 'automatically ' : ''}assigned to you based on its description.\n\n`
-        + `Category: ${t.category || '—'}\nPriority: ${t.priority}\n\n${t.body}\n\nPlease open the console to respond.\n\n— MP HMIS Helpdesk`;
-    sendMail({ to: s.email, subject, text })
-        .then((r) => event(ticketId, 'EMAIL', r.sent ? `Emailed ${s.name} <${s.email}>` : `Notification logged for ${s.name} <${s.email}> (SMTP off)`, 'System'))
+    const ccList = cc.filter((e) => e && e !== s.email);
+    const subject = `[${t.refNo}] ${auto ? 'Auto-assigned' : 'Assigned'} (${t.priority}/${t.severity || '—'}): ${t.subject}`;
+    const text = `Hi ${s.name},\n\nGrievance ${t.refNo} has been ${auto ? 'automatically ' : ''}assigned to you based on Groq's analysis.\n\n`
+        + `Module: ${t.module || '—'}\nTechnology: ${t.technology || '—'}\nPriority: ${t.priority}   Severity: ${t.severity || '—'}\n`
+        + `${t.aiSummary ? `Summary: ${t.aiSummary}\n` : ''}\nOriginal issue:\n${t.body}\n\nPlease open the console to add root cause, analysis, and resolution.\n\n— MPSEDC HMIS Support`;
+    sendMail({ to: s.email, cc: ccList, subject, text })
+        .then((r) => event(ticketId, 'EMAIL', r.sent
+            ? `Emailed ${s.name} <${s.email}>${ccList.length ? ` (cc ${ccList.join(', ')})` : ''}`
+            : `Notification logged for ${s.name} <${s.email}>${ccList.length ? ` cc ${ccList.join(', ')}` : ''} (SMTP off)`, 'System'))
         .catch(() => {});
 }
 
@@ -135,7 +161,8 @@ function notifyAssignee(ticketId, staffId, auto) {
  *          raisedByStaffId?:number|null, createdByName?:string|null}} dto
  * @returns {{ ticket: object, recommendation: object }}
  */
-export function createTicketAutoRouted(dto) {
+/** Inserts a ticket row (no routing) and returns its id. */
+export function insertTicketRecord(dto) {
     const info = db.prepare(
         `INSERT INTO tickets (subject, body, category, source, facility, hospital_id, requester_name, requester_email,
                               requester_mobile, is_anonymous, priority, status, raised_by_staff_id)
@@ -149,14 +176,51 @@ export function createTicketAutoRouted(dto) {
     const id = Number(info.lastInsertRowid);
     db.prepare('UPDATE tickets SET ref_no = ? WHERE id = ?').run(buildRef('TKT', id), id);
     event(id, 'CREATED', dto.createdByName ? `Raised by ${dto.createdByName}` : 'Created', dto.createdByName ?? null);
-    const ticket = getRow(id);
-    const recommendation = buildRecommendation(ticket);
+    return id;
+}
+
+/** Creates a ticket and auto-routes it locally (used by feedback + internal staff tickets). */
+export function createTicketAutoRouted(dto) {
+    const id = insertTicketRecord(dto);
+    const recommendation = buildRecommendation(getRow(id));
     if (recommendation.recommended) {
         const r = recommendation.recommended;
         assign(id, r.staffId, r.staffName, { auto: true });
         event(id, 'RECOMMENDATION', `Suggested ${r.staffName}: ${r.reason} (${recommendation.source})`, 'Recommendation engine');
     }
     return { ticket: getRow(id), recommendation };
+}
+
+/**
+ * Groq-analyzes a grievance (module / technology / priority / severity), then auto-assigns it to a
+ * developer of the matching specialty and emails them (CC the OIC/PM/TL). Falls back to local
+ * routing when AI is unavailable or returns no technology. Best-effort — never throws.
+ */
+export async function enrichAndRouteWithAI(id) {
+    try {
+        const t = getRow(id);
+        if (!t) return;
+        let dev = null, reason = '', src = '';
+
+        const ai = await analyzeGrievance({ description: t.body });
+        if (ai) {
+            db.prepare('UPDATE tickets SET module=?, technology=?, severity=?, priority=?, ai_summary=?, updated_at=? WHERE id=?')
+                .run(ai.module, ai.technology, ai.severity, ai.priority, ai.summary, nowIso(), id);
+            event(id, 'AI_ANALYSIS', `Groq: module=${ai.module}, tech=${ai.technology || '—'}, priority=${ai.priority}, severity=${ai.severity}`, 'Groq AI');
+            dev = leastLoadedBySpecialty(ai.technology);
+            if (dev) { reason = `${ai.technology} developer for ${ai.module}`; src = 'ai'; }
+        }
+        if (!dev) {
+            const rec = buildRecommendation(getRow(id));
+            if (rec.recommended) { dev = { staffId: rec.recommended.staffId, staffName: rec.recommended.staffName }; reason = rec.recommended.reason; src = rec.source; }
+        }
+        if (dev) {
+            assign(id, dev.staffId, dev.staffName, { auto: true, cc: leadershipEmails() });
+            event(id, 'RECOMMENDATION', `Assigned ${dev.staffName} — ${reason} (${src})`, 'Router');
+        }
+    } catch (err) {
+        console.warn('[ai] enrichAndRouteWithAI failed:', err.message); // eslint-disable-line no-console
+    }
 }
 
 // ---- Router ----
@@ -168,10 +232,26 @@ router.post('/rewrite', vBody(rewriteSchema), asyncHandler(async (req, res) => {
     sendSuccess(res, { rewritten, aiAvailable: rewritten !== null }, rewritten ? 'Rewritten' : (aiEnabled() ? 'AI service is not reachable' : 'AI is not configured'));
 }));
 
+// Live "suggested resolutions" while the citizen types — resolutions from similar RESOLVED
+// grievances only (no internal fields), for self-service before submitting.
+const suggestSchema = Joi.object({ text: Joi.string().min(6).max(2000).required() });
+router.post('/suggest', vBody(suggestSchema), asyncHandler((req, res) => {
+    const target = toVector(tokenize(req.body.text));
+    if (!target.norm) return sendSuccess(res, { suggestions: [] }, 'Suggestions');
+    const rows = db.prepare(`SELECT subject, body, module, resolution FROM tickets WHERE status IN ('RESOLVED','CLOSED') AND resolution IS NOT NULL`).all();
+    const suggestions = rows
+        .map((r) => ({ module: r.module, resolution: r.resolution, score: cosine(target, toVector(tokenize(`${r.subject} ${r.body}`))) }))
+        .filter((r) => r.score >= 0.08)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map((r) => ({ module: r.module, resolution: r.resolution, match: Math.round(r.score * 100) }));
+    sendSuccess(res, { suggestions }, 'Suggestions');
+}));
+
 router.post('/public', vBody(publicSchema), asyncHandler((req, res) => {
     const d = req.body;
     const subject = (d.subject && d.subject.trim()) || d.description.trim().slice(0, 80);
-    const { ticket } = createTicketAutoRouted({
+    const id = insertTicketRecord({
         subject, body: d.description, category: 'GRIEVANCE', source: 'WEB', hospitalId: d.hospitalId ?? null,
         isAnonymous: d.isAnonymous,
         requesterName: d.isAnonymous ? null : (d.requesterName || null),
@@ -179,7 +259,9 @@ router.post('/public', vBody(publicSchema), asyncHandler((req, res) => {
         requesterMobile: d.isAnonymous ? null : (d.requesterMobile || null),
         createdByName: d.isAnonymous ? 'Anonymous' : (d.requesterName || 'Public')
     });
-    // Public response carries only the reference — no internal assignee or other PII.
+    const ticket = getRow(id);
+    enrichAndRouteWithAI(id); // background: Groq analysis → specialty routing → email (CC OIC/PM/TL)
+    // Public response carries only the reference — no assignee, analysis, or other internal detail.
     sendCreated(res, { refNo: ticket.refNo, status: ticket.status }, `Submitted. Your reference number is ${ticket.refNo}`);
 }));
 
@@ -214,7 +296,7 @@ router.get('/staff-directory', asyncHandler((req, res) => {
 // Team roster (OIC → PM → TL → Developer) with each member's open + resolved ticket load.
 router.get('/team', asyncHandler((req, res) => {
     const rows = db.prepare(`
-        SELECT s.id, s.name, s.name_hi AS nameHi, s.email, s.grade, s.department, s.skills,
+        SELECT s.id, s.name, s.name_hi AS nameHi, s.email, s.grade, s.specialty, s.department, s.skills,
             (SELECT COUNT(*) FROM tickets t WHERE t.assigned_staff_id = s.id AND t.status NOT IN ('RESOLVED','CLOSED')) AS openCount,
             (SELECT COUNT(*) FROM tickets t WHERE t.assigned_staff_id = s.id AND t.status IN ('RESOLVED','CLOSED')) AS resolvedCount
         FROM staff s
@@ -273,6 +355,19 @@ router.post('/:id/auto-assign', vParams(idParam), asyncHandler((req, res) => {
     if (!rec.recommended) throw new BadRequestError('No staff could be recommended');
     assign(id, rec.recommended.staffId, rec.recommended.staffName, { auto: true, actorName: req.staff.name });
     sendSuccess(res, { ticket: getRow(id), recommendation: rec }, 'Ticket auto-assigned');
+}));
+
+// Developer-only: root cause, technical analysis, and re-classification (never exposed publicly).
+router.patch('/:id/analysis', vParams(idParam), vBody(analysisSchema), asyncHandler((req, res) => {
+    const id = Number(req.params.id);
+    if (!getRow(id)) throw new NotFoundError('Ticket not found');
+    const d = req.body;
+    db.prepare(`UPDATE tickets SET root_cause=COALESCE(@rc, root_cause), technical_analysis=COALESCE(@ta, technical_analysis),
+                    module=COALESCE(@mod, module), technology=COALESCE(@tech, technology), severity=COALESCE(@sev, severity), updated_at=@now
+                WHERE id=@id`)
+        .run({ id, rc: d.rootCause || null, ta: d.technicalAnalysis || null, mod: d.module || null, tech: d.technology || null, sev: d.severity || null, now: nowIso() });
+    event(id, 'ANALYSIS', 'Root cause / technical analysis updated', req.staff.name);
+    sendSuccess(res, getRow(id), 'Analysis saved');
 }));
 
 router.patch('/:id/status', vParams(idParam), vBody(statusSchema), asyncHandler((req, res) => {

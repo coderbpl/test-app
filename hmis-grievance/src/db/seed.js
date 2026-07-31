@@ -4,19 +4,6 @@ import { env } from '../config/env.js';
 import { migrate } from './migrate.js';
 import { buildRef } from '../utils/index.js';
 
-const CATEGORIES = [
-    { code: 'OPD_WAIT',        name: 'Long OPD waiting time',          name_hi: 'ओपीडी में लंबा इंतजार',   pr: 'MEDIUM' },
-    { code: 'MEDICINE_STOCK',  name: 'Medicine not available',         name_hi: 'दवाई उपलब्ध नहीं',        pr: 'HIGH' },
-    { code: 'STAFF_BEHAVIOUR', name: 'Staff behaviour / misconduct',   name_hi: 'कर्मचारी का व्यवहार',      pr: 'HIGH' },
-    { code: 'CLEANLINESS',     name: 'Cleanliness / hygiene',          name_hi: 'साफ-सफाई',                pr: 'MEDIUM' },
-    { code: 'BILLING',         name: 'Billing / overcharging',         name_hi: 'बिलिंग / अधिक शुल्क',      pr: 'HIGH' },
-    { code: 'DIAGNOSTICS',     name: 'Diagnostics / lab / radiology',  name_hi: 'जांच / लैब / रेडियोलॉजी',  pr: 'MEDIUM' },
-    { code: 'DENIAL_OF_CARE',  name: 'Denial or delay of treatment',   name_hi: 'इलाज से इनकार या देरी',    pr: 'CRITICAL' },
-    { code: 'AMBULANCE',       name: 'Ambulance / referral transport', name_hi: 'एम्बुलेंस / रेफरल परिवहन', pr: 'CRITICAL' },
-    { code: 'CORRUPTION',      name: 'Bribery / corruption',           name_hi: 'रिश्वत / भ्रष्टाचार',      pr: 'CRITICAL' },
-    { code: 'OTHER',           name: 'Other',                          name_hi: 'अन्य',                    pr: 'LOW' }
-];
-
 const HOSPITALS = [
     { name: 'Hamidia Hospital, Bhopal',        name_hi: 'हमीदिया अस्पताल, भोपाल',           district: 'Bhopal',   type: 'MC' },
     { name: 'JP District Hospital, Bhopal',    name_hi: 'जेपी जिला अस्पताल, भोपाल',          district: 'Bhopal',   type: 'DH' },
@@ -24,38 +11,54 @@ const HOSPITALS = [
     { name: 'District Hospital, Indore',       name_hi: 'जिला अस्पताल, इंदौर',               district: 'Indore',   type: 'DH' },
     { name: 'MY Hospital, Indore',             name_hi: 'एमवाय अस्पताल, इंदौर',              district: 'Indore',   type: 'MC' },
     { name: 'District Hospital, Gwalior',      name_hi: 'जिला अस्पताल, ग्वालियर',            district: 'Gwalior',  type: 'DH' },
-    { name: 'District Hospital, Jabalpur',     name_hi: 'जिला अस्पताल, जबलपुर',              district: 'Jabalpur', type: 'DH' },
-    { name: 'CHC Bairagarh, Bhopal',           name_hi: 'सीएचसी बैरागढ़, भोपाल',             district: 'Bhopal',   type: 'CHC' }
+    { name: 'District Hospital, Jabalpur',     name_hi: 'जिला अस्पताल, जबलपुर',              district: 'Jabalpur', type: 'DH' }
 ];
 
-// Grievance officers (handle citizen complaints).
-const OFFICERS = [
-    { name: 'Dr. Sunita Rao', name_hi: 'डॉ. सुनीता राव', email: 'sunita@mphmis.local', dept: 'Administration', tier: 'DISTRICT' },
-    { name: 'Anil Kumar',     name_hi: 'अनिल कुमार',     email: 'anil@mphmis.local',   dept: 'Grievance Cell', tier: 'FACILITY' }
-];
-
-// Ticket team — the OIC → PM → TL → Developer hierarchy. Tickets auto-route to a DEVELOPER by
-// the ticket description (skills + similarity to past resolved tickets).
+// MPSEDC HMIS support team — OIC / PM / Technical Lead + developers by specialty.
 const TEAM = [
-    { name: 'Rakesh Sharma', name_hi: 'राकेश शर्मा', email: 'oic@mphmis.local', grade: 'OIC', dept: 'IT Cell',  skills: 'oversight,approval' },
-    { name: 'Priya Menon',   name_hi: 'प्रिया मेनन', email: 'pm@mphmis.local',  grade: 'PM',  dept: 'IT Cell',  skills: 'planning,coordination' },
-    { name: 'Arjun Rao',     name_hi: 'अर्जुन राव',  email: 'tl.backend@mphmis.local',  grade: 'TL', dept: 'Backend',  skills: 'backend,api,server,integration' },
-    { name: 'Sneha Iyer',    name_hi: 'स्नेहा अय्यर', email: 'tl.frontend@mphmis.local', grade: 'TL', dept: 'Frontend', skills: 'frontend,ui,ux' },
-    { name: 'Vikram Singh',  name_hi: 'विक्रम सिंह', email: 'vikram@mphmis.local', grade: 'DEVELOPER', dept: 'Backend',  skills: 'backend,api,server,node,integration,error,500,save' },
-    { name: 'Neha Kapoor',   name_hi: 'नेहा कपूर',   email: 'neha@mphmis.local',   grade: 'DEVELOPER', dept: 'Frontend', skills: 'frontend,ui,ux,react,layout,css,display,dashboard' },
-    { name: 'Amit Joshi',    name_hi: 'अमित जोशी',   email: 'amit@mphmis.local',   grade: 'DEVELOPER', dept: 'Database', skills: 'database,sql,query,performance,slow,report,timeout' },
-    { name: 'Ravi Verma',    name_hi: 'रवि वर्मा',   email: 'ravi@mphmis.local',   grade: 'DEVELOPER', dept: 'DevOps',   skills: 'devops,deployment,build,pipeline,infra,server,release' },
-    { name: 'Pooja Nair',    name_hi: 'पूजा नायर',   email: 'pooja@mphmis.local',  grade: 'DEVELOPER', dept: 'Mobile',   skills: 'mobile,android,app,login,crash,ios' }
+    { name: 'Rakesh Sharma', name_hi: 'राकेश शर्मा', email: 'oic@mphmis.local', grade: 'OIC', specialty: null,       dept: 'MPSEDC',   skills: 'oversight,approval' },
+    { name: 'Priya Menon',   name_hi: 'प्रिया मेनन', email: 'pm@mphmis.local',  grade: 'PM',  specialty: null,       dept: 'MPSEDC',   skills: 'planning,coordination' },
+    { name: 'Arjun Rao',     name_hi: 'अर्जुन राव',  email: 'tl@mphmis.local',  grade: 'TL',  specialty: null,       dept: 'Technical', skills: 'architecture,review,api,ui,database,mobile' },
+    { name: 'Neha Kapoor',   name_hi: 'नेहा कपूर',   email: 'neha@mphmis.local',   grade: 'DEVELOPER', specialty: 'UI_UX',    dept: 'UI/UX',    skills: 'ui,ux,layout,css,form,button,display,screen,alignment,responsive' },
+    { name: 'Vikram Singh',  name_hi: 'विक्रम सिंह', email: 'vikram@mphmis.local', grade: 'DEVELOPER', specialty: 'BACKEND',  dept: 'Backend',  skills: 'backend,api,server,500,error,integration,timeout,logic,token' },
+    { name: 'Ravi Verma',    name_hi: 'रवि वर्मा',   email: 'ravi@mphmis.local',   grade: 'DEVELOPER', specialty: 'BACKEND',  dept: 'Backend',  skills: 'backend,api,service,sync,integration,error' },
+    { name: 'Amit Joshi',    name_hi: 'अमित जोशी',   email: 'amit@mphmis.local',   grade: 'DEVELOPER', specialty: 'DATABASE', dept: 'Database', skills: 'database,sql,query,report,export,data,slow,index' },
+    { name: 'Pooja Nair',    name_hi: 'पूजा नायर',   email: 'pooja@mphmis.local',  grade: 'DEVELOPER', specialty: 'MOBILE',   dept: 'Mobile',   skills: 'mobile,android,ios,app,crash,login,apk' }
 ];
 
-// Resolved dev tickets — the routing history each new ticket is matched against.
+// Resolved HMIS grievances — routing history AND the source of "suggested resolutions" shown
+// to citizens as they type. Each carries the module/technology/root-cause it was solved under.
 const TICKETS = [
-    { cat: 'API',        agent: 'vikram@mphmis.local', subject: 'API returns 500 error when saving patient record', body: 'The patient save API intermittently returns a 500 internal server error on submit.', res: 'Null check added on the payment reference; 500 resolved.' },
-    { cat: 'DATABASE',   agent: 'amit@mphmis.local',   subject: 'Reports page very slow, query times out', body: 'The MIS reports page takes over a minute and the database query times out under load.', res: 'Added an index on visit_date and rewrote the aggregate query; report loads in 2s.' },
-    { cat: 'UI_UX',      agent: 'neha@mphmis.local',   subject: 'Dashboard layout broken on tablet, cards overlap', body: 'On tablet width the dashboard cards overlap and the CSS grid breaks.', res: 'Fixed the responsive grid breakpoints; layout correct on tablet and mobile.' },
-    { cat: 'DEPLOYMENT', agent: 'ravi@mphmis.local',   subject: 'Deployment pipeline failing at build step', body: 'The CI/CD deployment pipeline fails during the build with a dependency error.', res: 'Pinned the failing package version and cleared the build cache; pipeline green.' },
-    { cat: 'BUG',        agent: 'pooja@mphmis.local',  subject: 'Mobile app crashes on login for Android users', body: 'The Android app crashes immediately on login for several users.', res: 'Fixed a null token crash on Android 14; released app v3.2.1.' },
-    { cat: 'API',        agent: 'vikram@mphmis.local', subject: 'Lab system integration returns error', body: 'The integration with the external lab system returns an error and results do not sync.', res: 'Renewed the integration API token and added retry; sync restored.' }
+    { mod: 'Registration', tech: 'UI_UX',    dev: 'neha@mphmis.local',   sev: 'LOW',
+      subject: 'Login/Save button misaligned on the registration screen',
+      body: 'The Save button on the patient registration form is misaligned and overlaps the field on smaller screens.',
+      root: 'CSS flex container missing wrap; button pushed out of the row.',
+      res: 'Fixed the flex alignment and added responsive wrapping on the registration form; the button is now aligned on all screen sizes.' },
+    { mod: 'OPD', tech: 'BACKEND', dev: 'vikram@mphmis.local', sev: 'HIGH',
+      subject: 'OPD token generation API returns 500 error on submit',
+      body: 'Generating an OPD token intermittently returns a 500 internal server error when the department is selected.',
+      root: 'Null department id reached the token service and threw an unhandled exception.',
+      res: 'Added a null-check and validation on the department id in the token API and a clear error message; 500 resolved.' },
+    { mod: 'Reports/MIS', tech: 'DATABASE', dev: 'amit@mphmis.local', sev: 'MEDIUM',
+      subject: 'MIS report export is very slow and times out',
+      body: 'Exporting the daily MIS report takes over a minute and the database query times out under load.',
+      root: 'Full table scan on an unindexed visit_date column plus a large un-paginated export.',
+      res: 'Added an index on visit_date and paginated the export; the report now loads in ~2 seconds.' },
+    { mod: 'Mobile App', tech: 'MOBILE', dev: 'pooja@mphmis.local', sev: 'HIGH',
+      subject: 'Mobile app crashes on login for Android 14 users',
+      body: 'The Android app crashes immediately on login for several users on Android 14.',
+      root: 'Null auth-token dereference in the login flow on Android 14.',
+      res: 'Fixed the null-token crash on Android 14 and released app v3.2.1 on the Play Store.' },
+    { mod: 'Pharmacy', tech: 'BACKEND', dev: 'ravi@mphmis.local', sev: 'HIGH',
+      subject: 'Pharmacy stock sync integration failing',
+      body: 'The pharmacy stock sync with the central supply system is failing and stock counts are stale.',
+      root: 'Expired integration API token and no retry on transient failures.',
+      res: 'Renewed the integration token and added automatic retry with backoff; stock sync restored.' },
+    { mod: 'Appointments', tech: 'UI_UX', dev: 'neha@mphmis.local', sev: 'LOW',
+      subject: 'Patient name field overlaps date field on tablet view',
+      body: 'On tablet width the patient name and appointment date fields overlap on the booking screen.',
+      root: 'Fixed-width columns not adapting at the tablet breakpoint.',
+      res: 'Corrected the responsive grid breakpoints; the booking form lays out correctly on tablet and mobile.' }
 ];
 
 const FEEDBACK = [
@@ -69,12 +72,9 @@ const FEEDBACK = [
 export function seed() {
     migrate();
 
-    const insCat = db.prepare('INSERT OR IGNORE INTO grievance_categories (code, name, name_hi, default_priority) VALUES (@code, @name, @name_hi, @pr)');
-    db.transaction((rows) => rows.forEach((r) => insCat.run(r)))(CATEGORIES);
-
     if (db.prepare('SELECT COUNT(*) AS n FROM hospitals').get().n === 0) {
         const insH = db.prepare('INSERT INTO hospitals (name, name_hi, district, type) VALUES (@name, @name_hi, @district, @type)');
-        db.transaction((rows) => rows.forEach((h) => insH.run(h)))(HOSPITALS);
+        db.transaction((rows) => rows.forEach((x) => insH.run(x)))(HOSPITALS);
         console.log(`[seed] ${HOSPITALS.length} hospitals`); // eslint-disable-line no-console
     }
 
@@ -82,27 +82,25 @@ export function seed() {
 
     if (db.prepare('SELECT COUNT(*) AS n FROM staff').get().n === 0) {
         db.prepare('INSERT INTO staff (name, email, password_hash, role, department, tier, skills) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .run(env.admin.name, env.admin.email.toLowerCase(), bcrypt.hashSync(env.admin.password, 10), 'admin', 'Administration', 'STATE', 'all');
+            .run(env.admin.name, env.admin.email.toLowerCase(), bcrypt.hashSync(env.admin.password, 10), 'admin', 'MPSEDC', 'STATE', 'all');
         const h = bcrypt.hashSync('staff123', 10);
-        const insOfficer = db.prepare('INSERT INTO staff (name, name_hi, email, password_hash, role, department, tier) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        db.transaction((rows) => rows.forEach((s) => insOfficer.run(s.name, s.name_hi, s.email, h, 'officer', s.dept, s.tier)))(OFFICERS);
-        const insTeam = db.prepare('INSERT INTO staff (name, name_hi, email, password_hash, role, department, tier, skills, grade) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        db.transaction((rows) => rows.forEach((s) => insTeam.run(s.name, s.name_hi, s.email, h, 'agent', s.dept, 'FACILITY', s.skills, s.grade)))(TEAM);
-        console.log(`[seed] admin + ${OFFICERS.length} officers + ${TEAM.length} ticket-team (OIC/PM/TL/Developers) (password: staff123)`); // eslint-disable-line no-console
+        const insTeam = db.prepare('INSERT INTO staff (name, name_hi, email, password_hash, role, department, tier, skills, grade, specialty) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        db.transaction((rows) => rows.forEach((s) => insTeam.run(s.name, s.name_hi, s.email, h, 'agent', s.dept, 'FACILITY', s.skills, s.grade, s.specialty)))(TEAM);
+        console.log(`[seed] admin + MPSEDC team: OIC, PM, TL + ${TEAM.filter((t) => t.grade === 'DEVELOPER').length} developers (password: staff123)`); // eslint-disable-line no-console
     }
 
     if (db.prepare('SELECT COUNT(*) AS n FROM tickets').get().n === 0) {
         const insT = db.prepare(
-            `INSERT INTO tickets (subject, body, category, facility, status, assigned_staff_id, resolution, resolved_at)
-             VALUES (@subject, @body, @cat, 'MP HMIS Platform', 'RESOLVED', @agentId, @res, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
+            `INSERT INTO tickets (subject, body, category, source, module, technology, severity, status, assigned_staff_id, root_cause, resolution, resolved_at)
+             VALUES (@subject, @body, 'GRIEVANCE', 'WEB', @mod, @tech, @sev, 'RESOLVED', @devId, @root, @res, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
         );
         db.transaction((rows) => rows.forEach((t) => {
-            const info = insT.run({ subject: t.subject, body: t.body, cat: t.cat, agentId: staffId(t.agent), res: t.res });
+            const info = insT.run({ subject: t.subject, body: t.body, mod: t.mod, tech: t.tech, sev: t.sev, devId: staffId(t.dev), root: t.root, res: t.res });
             const id = Number(info.lastInsertRowid);
             db.prepare('UPDATE tickets SET ref_no = ? WHERE id = ?').run(buildRef('TKT', id), id);
-            db.prepare('INSERT INTO ticket_events (ticket_id, event_type, detail, actor_name) VALUES (?, ?, ?, ?)').run(id, 'CREATED', 'Seed ticket', 'seed');
+            db.prepare('INSERT INTO ticket_events (ticket_id, event_type, detail, actor_name) VALUES (?, ?, ?, ?)').run(id, 'CREATED', 'Seed grievance', 'seed');
         }))(TICKETS);
-        console.log(`[seed] ${TICKETS.length} resolved dev tickets (routing history)`); // eslint-disable-line no-console
+        console.log(`[seed] ${TICKETS.length} resolved HMIS grievances (routing history + suggestions)`); // eslint-disable-line no-console
     }
 
     if (db.prepare('SELECT COUNT(*) AS n FROM feedback').get().n === 0) {

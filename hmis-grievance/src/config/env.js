@@ -24,7 +24,7 @@ export const env = Object.freeze({
     // AI for "Rewrite with AI". Local-first (Ollama) so grievance text — which may contain
     // patient details — never leaves the server. provider: 'ollama' | 'groq' | 'none'.
     ai: {
-        provider: (process.env.AI_PROVIDER || 'ollama').toLowerCase(),
+        provider: (process.env.AI_PROVIDER || 'groq').toLowerCase(),
         timeoutMs: Number(process.env.AI_TIMEOUT_MS || 30000),
         ollama: {
             baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
