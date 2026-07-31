@@ -9,7 +9,6 @@ const nowIso = () => new Date().toISOString();
 const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 const STATUS = ['NEW', 'ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'];
 const TIER = ['FACILITY', 'BLOCK', 'DISTRICT', 'DIVISION', 'STATE'];
-const NEXT_TIER = { FACILITY: 'DISTRICT', BLOCK: 'DISTRICT', DISTRICT: 'DIVISION', DIVISION: 'STATE' };
 
 // ---- Validation ----
 const createSchema = Joi.object({
@@ -51,7 +50,7 @@ const ROW = `
     g.subject, g.description, g.language, g.is_anonymous AS isAnonymous,
     g.complainant_name AS complainantName, g.complainant_mobile AS complainantMobile, g.complainant_email AS complainantEmail,
     g.hospital_id AS hospitalId, h.name AS hospitalName, g.facility, g.department, g.priority, g.status, g.is_urgent AS isUrgent,
-    g.sla_due_at AS slaDueAt, g.current_owner_tier AS currentOwnerTier,
+    g.current_owner_tier AS currentOwnerTier,
     g.assigned_staff_id AS assignedStaffId, s.name AS assignedStaffName, g.resolution,
     g.resolved_at AS resolvedAt, g.closed_at AS closedAt, g.created_at AS createdAt, g.updated_at AS updatedAt`;
 
@@ -65,27 +64,26 @@ function getRow(id) {
 }
 
 /**
- * Creates a grievance (priority + SLA seeded from the category). Optionally links back to a
+ * Creates a grievance (priority seeded from the category). Optionally links back to a
  * feedback row that triggered it. Returns the created grievance.
  */
 export function createGrievance(dto, { actorName = null, actorId = null } = {}) {
-    let priority = 'MEDIUM', slaHours = 72;
+    let priority = 'MEDIUM';
     if (dto.categoryId) {
         const cat = db.prepare('SELECT * FROM grievance_categories WHERE id = ?').get(dto.categoryId);
         if (!cat) throw new BadRequestError('Invalid category');
-        priority = cat.default_priority; slaHours = cat.sla_hours;
+        priority = cat.default_priority;
     }
-    const slaDueAt = new Date(Date.now() + slaHours * 3600 * 1000).toISOString();
     const tx = db.transaction(() => {
         const info = db.prepare(
             `INSERT INTO grievances (category_id, hospital_id, subject, description, is_anonymous, complainant_name, complainant_mobile,
-                                     complainant_email, facility, department, priority, status, sla_due_at, current_owner_tier)
-             VALUES (@categoryId, @hospitalId, @subject, @description, @isAnonymous, @cname, @cmobile, @cemail, @facility, @department, @priority, 'NEW', @slaDueAt, 'FACILITY')`
+                                     complainant_email, facility, department, priority, status, current_owner_tier)
+             VALUES (@categoryId, @hospitalId, @subject, @description, @isAnonymous, @cname, @cmobile, @cemail, @facility, @department, @priority, 'NEW', 'FACILITY')`
         ).run({
             categoryId: dto.categoryId ?? null, hospitalId: dto.hospitalId ?? null, subject: dto.subject ?? null, description: dto.description,
             isAnonymous: dto.isAnonymous ? 1 : 0, cname: dto.complainantName ?? null, cmobile: dto.complainantMobile ?? null,
             cemail: dto.complainantEmail ?? null, facility: dto.facility ?? null, department: dto.department ?? null,
-            priority, slaDueAt
+            priority
         });
         const id = Number(info.lastInsertRowid);
         db.prepare('UPDATE grievances SET ref_no = ? WHERE id = ?').run(buildRef('GRV', id), id);
@@ -104,28 +102,11 @@ function detail(id) {
     return { ...g, timeline: tl };
 }
 
-/** SLA sweep — escalate every overdue, open grievance one tier up. Returns affected rows. */
-export function escalateOverdue() {
-    const now = nowIso();
-    const overdue = db.prepare(`SELECT id, current_owner_tier AS tier FROM grievances WHERE status NOT IN ('RESOLVED','CLOSED') AND sla_due_at < ? AND current_owner_tier <> 'STATE'`).all(now);
-    const out = [];
-    const tx = db.transaction(() => {
-        for (const g of overdue) {
-            const to = NEXT_TIER[g.tier] || 'STATE';
-            db.prepare('UPDATE grievances SET current_owner_tier = ?, assigned_staff_id = NULL, updated_at = ? WHERE id = ?').run(to, now, g.id);
-            timeline(g.id, { type: 'ESCALATED', comment: `Auto-escalated (SLA breach) ${g.tier} → ${to}`, actorName: 'System (SLA)', internal: 1 });
-            out.push({ id: g.id, from: g.tier, to });
-        }
-    });
-    tx();
-    return out;
-}
-
 // ---- Router ----
 const router = Router();
 
 router.get('/categories', asyncHandler((req, res) => {
-    sendSuccess(res, db.prepare('SELECT id, code, name, name_hi AS nameHi, default_priority AS defaultPriority, sla_hours AS slaHours FROM grievance_categories WHERE status = 1 ORDER BY name').all(), 'Categories');
+    sendSuccess(res, db.prepare('SELECT id, code, name, name_hi AS nameHi, default_priority AS defaultPriority FROM grievance_categories WHERE status = 1 ORDER BY name').all(), 'Categories');
 }));
 
 router.post('/rewrite', vBody(rewriteSchema), asyncHandler(async (req, res) => {
@@ -158,12 +139,11 @@ router.get('/', authenticate, vQuery(listQuery), asyncHandler((req, res) => {
     add('g.hospital_id = @hospitalId', 'hospitalId', req.query.hospitalId);
     if (req.query.isUrgent !== undefined) { where.push('g.is_urgent = @u'); p.u = req.query.isUrgent ? 1 : 0; }
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-    const rows = db.prepare(`SELECT ${ROW},
-            CASE WHEN g.status NOT IN ('RESOLVED','CLOSED') AND g.sla_due_at < @now THEN 1 ELSE 0 END AS slaBreached
+    const rows = db.prepare(`SELECT ${ROW}
         FROM grievances g LEFT JOIN grievance_categories c ON c.id = g.category_id LEFT JOIN staff s ON s.id = g.assigned_staff_id LEFT JOIN hospitals h ON h.id = g.hospital_id
         ${clause}
         ORDER BY g.is_urgent DESC, CASE g.priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, g.created_at DESC
-        LIMIT @limit OFFSET @offset`).all({ ...p, now: nowIso(), limit, offset });
+        LIMIT @limit OFFSET @offset`).all({ ...p, limit, offset });
     const { total } = db.prepare(`SELECT COUNT(*) AS total FROM grievances g ${clause}`).get(p);
     sendPaginated(res, rows, total, page, limit, 'Grievances');
 }));

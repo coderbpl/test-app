@@ -4,9 +4,10 @@ import { db } from '../config/db.js';
 import { sendSuccess, sendCreated, sendPaginated, asyncHandler, sanitizePagination, buildRef, NotFoundError, BadRequestError } from '../utils/index.js';
 import { authenticate, vBody, vParams, vQuery } from '../middlewares/index.js';
 import { tokenize, toVector, cosine } from '../utils/textSimilarity.js';
+import { sendMail } from './email.service.js';
 
 const nowIso = () => new Date().toISOString();
-const CATEGORY = ['IT', 'BIOMEDICAL', 'FACILITY', 'HOUSEKEEPING', 'SUPPLY', 'OTHER'];
+const CATEGORY = ['BUG', 'FEATURE', 'API', 'DATABASE', 'UI_UX', 'DEPLOYMENT', 'OTHER'];
 const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 const STATUS = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED', 'REOPENED'];
 const THRESHOLD = 0.12, TOP_K = 5;
@@ -64,22 +65,50 @@ function recommendStaff(similar) {
     for (const [staffId, v] of votes) if (!best || v.score > best.score) best = { staffId, ...v };
     return { staffId: best.staffId, staffName: best.name, score: Math.round(best.score * 1000) / 1000, basedOn: best.count, reason: `Resolved ${best.count} similar ticket${best.count > 1 ? 's' : ''}` };
 }
+/** Matches the ticket description against each developer's skill tags. */
+function skillsMatch(ticket) {
+    const tokens = new Set(tokenize(`${ticket.subject} ${ticket.body}`));
+    const devs = db.prepare("SELECT id AS staffId, name AS staffName, skills FROM staff WHERE status = 1 AND grade = 'DEVELOPER'").all();
+    let best = null;
+    for (const d of devs) {
+        const hits = (d.skills || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).filter((t) => tokens.has(t)).length;
+        if (hits > 0 && (!best || hits > best.hits)) best = { staffId: d.staffId, staffName: d.staffName, hits };
+    }
+    return best ? { staffId: best.staffId, staffName: best.staffName, reason: `Skill match (${best.hits} keyword${best.hits > 1 ? 's' : ''})` } : null;
+}
+/** Least-loaded developer — final fallback when nothing else matches. */
 function leastLoaded() {
     const row = db.prepare(`SELECT s.id AS staffId, s.name AS staffName,
             (SELECT COUNT(*) FROM tickets t WHERE t.assigned_staff_id = s.id AND t.status NOT IN ('RESOLVED','CLOSED')) AS load
-        FROM staff s WHERE s.status = 1 AND s.role = 'agent' ORDER BY load ASC, s.id ASC LIMIT 1`).get();
-    return row ? { staffId: row.staffId, staffName: row.staffName, reason: 'Least-loaded agent (no similar history)' } : null;
+        FROM staff s WHERE s.status = 1 AND s.grade = 'DEVELOPER' ORDER BY load ASC, s.id ASC LIMIT 1`).get();
+    return row ? { staffId: row.staffId, staffName: row.staffName, reason: 'Least-loaded developer (no matching history)' } : null;
 }
+/** Routes a ticket to a developer by description: similar past tickets → skill tags → load. */
 function buildRecommendation(ticket) {
     const similar = findSimilar(ticket);
     const bySim = recommendStaff(similar);
-    const recommended = bySim || leastLoaded();
-    return { similar, recommended, source: bySim ? 'similarity' : (recommended ? 'load-balance' : 'none') };
+    const bySkill = bySim ? null : skillsMatch(ticket);
+    const recommended = bySim || bySkill || leastLoaded();
+    return { similar, recommended, source: bySim ? 'similarity' : bySkill ? 'skills' : (recommended ? 'load-balance' : 'none') };
 }
 
 function assign(id, staffId, staffName, { auto = false, actorName } = {}) {
     db.prepare("UPDATE tickets SET assigned_staff_id=?, status=CASE WHEN status='OPEN' THEN 'ASSIGNED' ELSE status END, updated_at=? WHERE id=?").run(staffId, nowIso(), id);
     event(id, auto ? 'AUTO_ASSIGNED' : 'ASSIGNED', `Assigned to ${staffName}`, actorName || (auto ? 'Auto-router' : staffName));
+    notifyAssignee(id, staffId, auto);
+}
+
+/** Emails the assignee about a ticket (best-effort; logs an EMAIL event with the outcome). */
+function notifyAssignee(ticketId, staffId, auto) {
+    const t = getRow(ticketId);
+    const s = db.prepare('SELECT name, email FROM staff WHERE id = ?').get(staffId);
+    if (!t || !s?.email) return;
+    const subject = `[${t.refNo}] ${auto ? 'Auto-assigned' : 'Assigned'}: ${t.subject}`;
+    const text = `Hi ${s.name},\n\nTicket ${t.refNo} has been ${auto ? 'automatically ' : ''}assigned to you based on its description.\n\n`
+        + `Category: ${t.category || '—'}\nPriority: ${t.priority}\n\n${t.body}\n\nPlease open the console to respond.\n\n— MP HMIS Helpdesk`;
+    sendMail({ to: s.email, subject, text })
+        .then((r) => event(ticketId, 'EMAIL', r.sent ? `Emailed ${s.name} <${s.email}>` : `Notification logged for ${s.name} <${s.email}> (SMTP off)`, 'System'))
+        .catch(() => {});
 }
 
 /**

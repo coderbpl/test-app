@@ -77,7 +77,7 @@ router.post('/', vBody(createSchema), asyncHandler((req, res) => {
             linkedTicket = createTicketAutoRouted({
                 subject: `Low HMIS app rating (${d.ratingOverall}/5)`,
                 body: d.comment?.trim() ? d.comment.trim() : `A user rated the HMIS application ${d.ratingOverall}/5 with no comment.`,
-                category: 'IT', priority: 'MEDIUM', createdByName: 'App feedback'
+                category: 'BUG', priority: 'MEDIUM', createdByName: 'App feedback'
             }).ticket;
             db.prepare('UPDATE feedback SET linked_ticket_id = ? WHERE id = ?').run(linkedTicket.id, id);
         }

@@ -17,7 +17,7 @@
             <label>Email</label><input id="email" type="email" value="admin@mphmis.local" />
             <label>Password</label><input id="password" type="password" value="admin123" />
             <div class="btn-row"><button id="loginBtn" style="width:100%;justify-content:center">Log in</button></div>
-            <div class="help" style="margin-top:12px">Admin: admin@mphmis.local / admin123 · Staff: ramesh@ / kavita@ / suresh@ / meena@mphmis.local / staff123</div>
+            <div class="help" style="margin-top:12px">Admin: admin@mphmis.local / admin123 · Team: oic@ / pm@ / tl.backend@ / vikram@ / neha@ / amit@ / ravi@ / pooja@mphmis.local / staff123</div>
         </div>
     </div>
 
@@ -96,8 +96,7 @@
                     <div class="stat"><div class="num">${d.grievances.total || 0}</div><div class="lbl">Total</div></div>
                     <div class="stat"><div class="num">${d.grievances.open || 0}</div><div class="lbl">Open</div></div>
                     <div class="stat alert"><div class="num">${d.grievances.urgentOpen || 0}</div><div class="lbl">Urgent open</div></div>
-                    <div class="stat amber"><div class="num">${d.grievances.slaBreached || 0}</div><div class="lbl">SLA breached</div></div>
-                    <div class="stat ok"><div class="num">${d.grievances.slaCompliancePct}%</div><div class="lbl">SLA compliance</div></div>
+                    <div class="stat ok"><div class="num">${d.grievances.resolved || 0}</div><div class="lbl">Resolved</div></div>
                 </div>
                 <h3 style="margin:14px 0 10px;color:var(--navy)">★ Feedback</h3>
                 <div class="stat-grid">
@@ -132,7 +131,7 @@
                 const r = await api('/grievances?' + p);
                 $('gList').innerHTML = r.data.length ? `<table><thead><tr><th>Ref</th><th>Subject</th><th>Priority</th><th>Status</th><th>Owner tier</th></tr></thead><tbody>${
                     r.data.map(g => `<tr data-id="${g.id}"><td><strong>${esc(g.refNo)}</strong><div class="muted" style="font-size:12px">${esc(g.categoryName || '—')}${g.hospitalName ? ' · ' + esc(g.hospitalName) : ''}</div></td>
-                    <td>${esc((g.subject || g.description).slice(0, 60))}</td><td>${pill(g.priority, g.priority)}</td><td>${pill('status', g.status)}${g.slaBreached ? ' ' + pill('breach', 'SLA') : ''}</td><td class="muted">${esc(g.currentOwnerTier)}</td></tr>`).join('')
+                    <td>${esc((g.subject || g.description).slice(0, 60))}</td><td>${pill(g.priority, g.priority)}</td><td>${pill('status', g.status)}</td><td class="muted">${esc(g.currentOwnerTier)}</td></tr>`).join('')
                 }</tbody></table>` : '<p class="muted">No grievances.</p>';
                 $('gList').querySelectorAll('tbody tr').forEach(tr => tr.addEventListener('click', () => openGrievance(tr.dataset.id)));
             };
@@ -151,7 +150,6 @@
                     <div class="k">Department</div><div>${esc(g.department || '—')}</div>
                     <div class="k">Complainant</div><div>${g.isAnonymous ? 'Anonymous' : esc(g.complainantName || '—') + (g.complainantMobile ? ' · ' + esc(g.complainantMobile) : '')}</div>
                     <div class="k">Owner tier</div><div>${esc(g.currentOwnerTier)}${g.assignedStaffName ? ' · ' + esc(g.assignedStaffName) : ''}</div>
-                    <div class="k">SLA due</div><div>${g.slaDueAt ? dt(g.slaDueAt) : '—'}</div>
                 </div>
                 <div class="row" style="margin-top:12px">
                     <select id="gsStatus"><option value="">Change status…</option>${['ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'REOPENED'].map(s => `<option>${s}</option>`).join('')}</select>
@@ -215,7 +213,7 @@
             el.innerHTML = `<div class="toolbar">
                 <input class="grow" id="tq" placeholder="Search…"/>
                 <select id="tStatus"><option value="">All statuses</option>${['OPEN','ASSIGNED','IN_PROGRESS','PENDING','RESOLVED','CLOSED'].map(s => `<option>${s}</option>`).join('')}</select>
-                <select id="tCat"><option value="">All categories</option>${['IT','BIOMEDICAL','FACILITY','HOUSEKEEPING','SUPPLY','OTHER'].map(s => `<option>${s}</option>`).join('')}</select>
+                <select id="tCat"><option value="">All categories</option>${['BUG','FEATURE','API','DATABASE','UI_UX','DEPLOYMENT','OTHER'].map(s => `<option>${s}</option>`).join('')}</select>
                 <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="tMine" style="width:auto"> Mine</label>
                 <button id="tNew">+ New ticket</button><button class="ghost" id="tRefresh">Refresh</button></div><div id="tList"><p class="muted">Loading…</p></div>`;
             const run = async () => {
@@ -237,7 +235,7 @@
             $('modal').classList.add('open'); $('mRef').textContent = 'New ticket';
             $('mBody').innerHTML = `<label>Subject *</label><input id="ntSub" placeholder="e.g. Ventilator alarm in ICU"/>
                 <label>Details *</label><textarea id="ntBody" placeholder="Describe the issue…"></textarea>
-                <div class="row"><div><label>Category</label><select id="ntCat"><option value="">Auto</option>${['IT', 'BIOMEDICAL', 'FACILITY', 'HOUSEKEEPING', 'SUPPLY', 'OTHER'].map(s => `<option>${s}</option>`).join('')}</select></div>
+                <div class="row"><div><label>Category</label><select id="ntCat"><option value="">Auto</option>${['BUG', 'FEATURE', 'API', 'DATABASE', 'UI_UX', 'DEPLOYMENT', 'OTHER'].map(s => `<option>${s}</option>`).join('')}</select></div>
                 <div><label>Priority</label><select id="ntPrio"><option value="">Default</option>${['LOW', 'MEDIUM', 'HIGH', 'URGENT'].map(s => `<option>${s}</option>`).join('')}</select></div></div>
                 <div class="btn-row"><button id="ntCreate">Create & auto-route</button></div><div id="ntNotice"></div>`;
             $('ntCreate').onclick = async () => {

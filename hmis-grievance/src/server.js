@@ -1,12 +1,10 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { seed } from './db/seed.js';
-import { startSlaSweep } from './jobs/slaSweep.js';
 
 function bootstrap() {
     seed();
     const app = createApp();
-    startSlaSweep();
     app.listen(env.port, () => {
         /* eslint-disable no-console */
         console.log('');

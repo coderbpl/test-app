@@ -11,8 +11,10 @@ CREATE TABLE IF NOT EXISTS staff (
     department     TEXT,
     -- Governance tier for grievance escalation routing.
     tier           TEXT    NOT NULL DEFAULT 'FACILITY' CHECK (tier IN ('FACILITY','BLOCK','DISTRICT','DIVISION','STATE')),
-    -- Free-form expertise tags used as a routing tie-breaker for tickets.
+    -- Free-form expertise tags used to route tickets by description.
     skills         TEXT,
+    -- Ticket-team grade for the OIC → PM → TL → Developer hierarchy (null for grievance officers).
+    grade          TEXT    CHECK (grade IN ('OIC','PM','TL','DEVELOPER')),
     status         INTEGER NOT NULL DEFAULT 1,
     created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -34,7 +36,6 @@ CREATE TABLE IF NOT EXISTS grievance_categories (
     name              TEXT    NOT NULL,
     name_hi           TEXT,
     default_priority  TEXT    NOT NULL DEFAULT 'MEDIUM' CHECK (default_priority IN ('LOW','MEDIUM','HIGH','CRITICAL')),
-    sla_hours         INTEGER NOT NULL DEFAULT 72,
     status            INTEGER NOT NULL DEFAULT 1
 );
 
@@ -56,7 +57,6 @@ CREATE TABLE IF NOT EXISTS grievances (
     status              TEXT    NOT NULL DEFAULT 'NEW'
         CHECK (status IN ('NEW','ACKNOWLEDGED','IN_PROGRESS','RESOLVED','CLOSED','REOPENED')),
     is_urgent           INTEGER NOT NULL DEFAULT 0,
-    sla_due_at          TEXT,
     current_owner_tier  TEXT    NOT NULL DEFAULT 'FACILITY'
         CHECK (current_owner_tier IN ('FACILITY','BLOCK','DISTRICT','DIVISION','STATE')),
     assigned_staff_id   INTEGER REFERENCES staff(id),
@@ -67,7 +67,6 @@ CREATE TABLE IF NOT EXISTS grievances (
     updated_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS ix_grv_status ON grievances (status, priority);
-CREATE INDEX IF NOT EXISTS ix_grv_sla    ON grievances (sla_due_at);
 
 CREATE TABLE IF NOT EXISTS grievance_timeline (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,

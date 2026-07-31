@@ -20,7 +20,6 @@ export const env = Object.freeze({
     },
     dbFile: fromRoot(process.env.DB_FILE || './data/hmis-grievance.db'),
     projectRoot,
-    slaSweepCron: process.env.SLA_SWEEP_CRON || '*/15 * * * *',
 
     // AI for "Rewrite with AI". Local-first (Ollama) so grievance text — which may contain
     // patient details — never leaves the server. provider: 'ollama' | 'groq' | 'none'.
@@ -35,6 +34,20 @@ export const env = Object.freeze({
             apiKey: process.env.GROQ_API_KEY || '',
             baseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
             model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+        }
+    },
+
+    // Email for ticket auto-assignment notifications. When SMTP isn't configured the notifier
+    // logs the message instead of sending, so the flow still works out of the box.
+    email: {
+        enabled: process.env.EMAIL_ENABLED === 'true',
+        from: process.env.EMAIL_FROM || 'HMIS Helpdesk <helpdesk@mphmis.local>',
+        smtp: {
+            host: process.env.SMTP_HOST || '',
+            port: Number(process.env.SMTP_PORT || 587),
+            secure: process.env.SMTP_SECURE === 'true',
+            user: process.env.SMTP_USER || '',
+            pass: process.env.SMTP_PASS || ''
         }
     }
 });
