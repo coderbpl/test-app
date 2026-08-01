@@ -74,7 +74,8 @@ function findSimilar(ticket, limit = TOP_K) {
     if (!target.norm) return [];
     const rows = db.prepare(`SELECT t.id, t.ref_no AS refNo, t.subject, t.body, t.status, t.resolution,
                                     t.assigned_staff_id AS assignedStaffId, s.name AS staffName
-                             FROM tickets t LEFT JOIN staff s ON s.id = t.assigned_staff_id WHERE t.id != @id`).all({ id: ticket.id ?? -1 });
+                             FROM tickets t LEFT JOIN staff s ON s.id = t.assigned_staff_id
+                             WHERE t.id != @id AND t.status IN ('RESOLVED','CLOSED')`).all({ id: ticket.id ?? -1 });
     return rows.map((r) => { const { body, ...rest } = r; return { ...rest, score: cosine(target, toVector(tokenize(`${r.subject} ${body}`))) }; })
         .filter((r) => r.score > 0).sort((a, b) => b.score - a.score).slice(0, limit)
         .map((r) => ({ ...r, score: Math.round(r.score * 1000) / 1000 }));
@@ -241,7 +242,7 @@ router.post('/suggest', vBody(suggestSchema), asyncHandler((req, res) => {
     const rows = db.prepare(`SELECT subject, body, module, resolution FROM tickets WHERE status IN ('RESOLVED','CLOSED') AND resolution IS NOT NULL`).all();
     const suggestions = rows
         .map((r) => ({ module: r.module, resolution: r.resolution, score: cosine(target, toVector(tokenize(`${r.subject} ${r.body}`))) }))
-        .filter((r) => r.score >= 0.08)
+        .filter((r) => r.score >= 0.15) // only genuinely similar resolved grievances (drops weak/junk matches)
         .sort((a, b) => b.score - a.score)
         .slice(0, 3)
         .map((r) => ({ module: r.module, resolution: r.resolution, match: Math.round(r.score * 100) }));

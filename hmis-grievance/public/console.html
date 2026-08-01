@@ -75,6 +75,7 @@
             $('who').textContent = me.name + ' · ' + me.role;
             try { staff = (await api('/auth/staff')).data; } catch {}
             try { hospitals = (await api('/hospitals')).data; } catch {}
+            try { team = (await api('/tickets/team')).data; } catch {}
             show('dashboard');
         }
         const TITLES = { dashboard: 'Dashboard', feedback: 'Feedback', tickets: 'Tickets', team: 'Team' };
@@ -188,7 +189,14 @@
             const { data: t } = await api('/tickets/' + id); $('mRef').textContent = t.refNo;
             const rec = t.recommendation || {}; const ra = rec.recommended;
             const sims = (rec.similar || []).map(s => `<div class="simitem"><strong>${esc(s.refNo || '')}</strong> ${esc(s.subject)} ${s.staffName ? '· <span class="muted">' + esc(s.staffName) + '</span>' : ''} ${pill('status', s.status)}<div class="muted">${(s.score * 100).toFixed(0)}% match${s.resolution ? ' · ' + esc(s.resolution.slice(0, 70)) + '…' : ''}</div><div class="bar"><span style="width:${Math.min(100, s.score * 100)}%"></span></div></div>`).join('') || '<p class="muted">No similar tickets.</p>';
-            const opts = staff.filter(s => s.role !== undefined).map(s => `<option value="${s.id}" ${s.id === t.assignedStaffId ? 'selected' : ''}>${esc(s.name)}${s.department ? ' — ' + esc(s.department) : ''}</option>`).join('');
+            const grp = (label, members) => members.length ? `<optgroup label="${label}">${members.map(m => `<option value="${m.id}" ${m.id === t.assignedStaffId ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</optgroup>` : '';
+            const opts = `<option value="" ${t.assignedStaffId ? '' : 'selected'} disabled>Select assignee…</option>`
+                + grp('Project Manager', team.filter(m => m.grade === 'PM'))
+                + grp('Technical Lead', team.filter(m => m.grade === 'TL'))
+                + grp('UI/UX Developers', team.filter(m => m.specialty === 'UI_UX'))
+                + grp('Backend Developers', team.filter(m => m.specialty === 'BACKEND'))
+                + grp('Database Developers', team.filter(m => m.specialty === 'DATABASE'))
+                + grp('Mobile App Developers', team.filter(m => m.specialty === 'MOBILE'));
             $('mBody').innerHTML = `<div class="grid2">
                 <div>
                     <div style="margin-bottom:8px">${pill(t.priority, 'Priority: ' + t.priority)} ${t.severity ? pill(t.severity, 'Severity: ' + t.severity) : ''} ${pill('status', t.status)} ${t.technology ? pill('MEDIUM', t.technology) : ''}${t.module ? ' <span class="muted" style="font-size:12px">· ' + esc(t.module) + '</span>' : ''}</div>
@@ -219,7 +227,7 @@
                 </div></div>`;
             const reload = () => { openTicket(id); loadTickets(); };
             const rb = $('tsRec'); if (rb) rb.onclick = async () => { await api(`/tickets/${id}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: ra.staffId }) }); reload(); };
-            $('tsDoAssign').onclick = async () => { await api(`/tickets/${id}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: Number($('tsAssign').value) }) }); reload(); };
+            $('tsDoAssign').onclick = async () => { if (!$('tsAssign').value) return; await api(`/tickets/${id}/assign`, { method: 'PATCH', body: JSON.stringify({ staffId: Number($('tsAssign').value) }) }); reload(); };
             $('tsMine').onclick = async () => { await api(`/tickets/${id}/assign-to-me`, { method: 'POST' }); reload(); };
             $('tsDoStatus').onclick = async () => { await api(`/tickets/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: $('tsStatus').value, resolution: $('tsResolution').value || undefined }) }); reload(); };
             $('tsSend').onclick = async () => { if (!$('tsReply').value.trim()) return; await api(`/tickets/${id}/reply`, { method: 'POST', body: JSON.stringify({ body: $('tsReply').value.trim(), isInternal: $('tsInternal').checked }) }); reload(); };

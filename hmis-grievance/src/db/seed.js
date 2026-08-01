@@ -80,14 +80,28 @@ export function seed() {
 
     const staffId = (email) => db.prepare('SELECT id FROM staff WHERE email = ?').get(email)?.id ?? null;
 
-    if (db.prepare('SELECT COUNT(*) AS n FROM staff').get().n === 0) {
+    // Reconcile staff on EVERY boot (idempotent): add missing team members and keep grade/
+    // specialty/password current, so the documented logins always work — even on a database that
+    // was seeded before the MPSEDC team existed.
+    const adminEmail = env.admin.email.toLowerCase();
+    if (!db.prepare('SELECT 1 FROM staff WHERE email = ?').get(adminEmail)) {
         db.prepare('INSERT INTO staff (name, email, password_hash, role, department, tier, skills) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .run(env.admin.name, env.admin.email.toLowerCase(), bcrypt.hashSync(env.admin.password, 10), 'admin', 'MPSEDC', 'STATE', 'all');
-        const h = bcrypt.hashSync('staff123', 10);
-        const insTeam = db.prepare('INSERT INTO staff (name, name_hi, email, password_hash, role, department, tier, skills, grade, specialty) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        db.transaction((rows) => rows.forEach((s) => insTeam.run(s.name, s.name_hi, s.email, h, 'agent', s.dept, 'FACILITY', s.skills, s.grade, s.specialty)))(TEAM);
-        console.log(`[seed] admin + MPSEDC team: OIC, PM, TL + ${TEAM.filter((t) => t.grade === 'DEVELOPER').length} developers (password: staff123)`); // eslint-disable-line no-console
+            .run(env.admin.name, adminEmail, bcrypt.hashSync(env.admin.password, 10), 'admin', 'MPSEDC', 'STATE', 'all');
     }
+    const h = bcrypt.hashSync('staff123', 10);
+    let added = 0;
+    db.transaction((rows) => rows.forEach((s) => {
+        const existing = db.prepare('SELECT id FROM staff WHERE email = ?').get(s.email);
+        if (existing) {
+            db.prepare('UPDATE staff SET name=?, name_hi=?, password_hash=?, role=?, department=?, grade=?, specialty=?, skills=?, status=1 WHERE email=?')
+                .run(s.name, s.name_hi, h, 'agent', s.dept, s.grade, s.specialty, s.skills, s.email);
+        } else {
+            db.prepare('INSERT INTO staff (name, name_hi, email, password_hash, role, department, tier, skills, grade, specialty) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                .run(s.name, s.name_hi, s.email, h, 'agent', s.dept, 'FACILITY', s.skills, s.grade, s.specialty);
+            added += 1;
+        }
+    }))(TEAM);
+    if (added) console.log(`[seed] reconciled MPSEDC team — added ${added} member(s) (password: staff123)`); // eslint-disable-line no-console
 
     if (db.prepare('SELECT COUNT(*) AS n FROM tickets').get().n === 0) {
         const insT = db.prepare(
